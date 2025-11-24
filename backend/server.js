@@ -14,7 +14,7 @@ app.use(express.json());
 // Cấu hình Multer để lưu file tạm thời vào bộ nhớ
 const upload = multer({ storage: multer.memoryStorage() });
 
-// --- Cấu hình Blockchain và Pinata (giữ nguyên) ---
+// --- Cấu hình Blockchain và Pinata ---
 const provider = new ethers.JsonRpcProvider(process.env.RPC_URL);
 const wallet = new ethers.Wallet(process.env.PRIVATE_KEY, provider);
 const contractABI = [
@@ -24,7 +24,7 @@ const contract = new ethers.Contract(process.env.CONTRACT_ADDRESS, contractABI, 
 const pinata = new pinataSDK(process.env.PINATA_API_KEY, process.env.PINATA_SECRET_KEY);
 
 // --- API ENDPOINT: MINT NFT ---
-// 2. Sử dụng upload.single('file') để nhận 1 file tên là 'file'
+// 2. Sử dụng upload.single('file')
 app.post('/api/mint', upload.single('certificateFile'), async (req, res) => {
     try {
         // 3. Lấy dữ liệu text từ req.body và file từ req.file
@@ -48,7 +48,7 @@ app.post('/api/mint', upload.single('certificateFile'), async (req, res) => {
         
         const fileResult = await pinata.pinFileToIPFS(fileStream, options);
         const imageURI = `ipfs://${fileResult.IpfsHash}`;
-        console.log("✅ File uploaded:", imageURI);
+        console.log("File uploaded:", imageURI);
 
         // --- BƯỚC 2: TẠO VÀ UPLOAD JSON METADATA ---
         console.log("...Đang tạo và upload JSON metadata...");
@@ -155,6 +155,59 @@ app.post('/api/verify', upload.single('verificationFile'), async (req, res) => {
     } catch (error) {
         console.error("Lỗi Verification:", error);
         res.status(500).json({ success: false, message: error.message });
+    }
+});
+const verifyABI = [
+    "function hashToTokenId(bytes32 hash) view returns (uint256)",
+    "function ownerOf(uint256 tokenId) view returns (address)"
+  ];
+const verifyContract = new ethers.Contract(process.env.CONTRACT_ADDRESS, verifyABI, provider);
+app.post('/api/verify', upload.single('verifyFile'), async (req, res) => {
+    try {
+        const file = req.file;
+        const { claimerAddress } = req.body; // Địa chỉ người đang yêu cầu xác thực (User)
+
+        if (!file) return res.status(400).json({ message: "Vui lòng gửi file!" });
+
+        console.log("🔍 Đang xác thực file...");
+
+        // 1. Tạo Hash từ file (Logic này PHẢI GIỐNG HỆT lúc Mint)
+        const fileHash = crypto.createHash('sha256').update(file.buffer).digest('hex');
+        
+        // 2. Chuyển sang format Bytes32 của Solidity
+        // Solidity: keccak256(abi.encodePacked(dataHashString))
+        const solidityHash = ethers.keccak256(ethers.toUtf8Bytes(fileHash));
+
+        // 3. Hỏi Contract
+        const tokenIdBigInt = await verifyContract.hashToTokenId(solidityHash);
+        const tokenId = tokenIdBigInt.toString();
+
+        if (tokenId === "0") {
+            return res.json({ 
+                verified: false, 
+                message: "Tài liệu này CHƯA được mint thành NFT (Hoặc đã bị Revoke)." 
+            });
+        }
+
+        // 4. Kiểm tra chủ sở hữu hiện tại
+        const currentOwner = await verifyContract.ownerOf(tokenId);
+        
+        // 5. Kết luận
+        const isOwner = currentOwner.toLowerCase() === claimerAddress.toLowerCase();
+
+        res.json({
+            verified: true,
+            tokenId: tokenId,
+            currentOwner: currentOwner,
+            isYou: isOwner,
+            message: isOwner 
+                ? "CHÍNH CHỦ! Bạn là chủ sở hữu hợp pháp của tài liệu này."
+                : `TÀI LIỆU HỢP LỆ NHƯNG KHÔNG PHẢI CỦA BẠN. Chủ sở hữu là: ${currentOwner}`
+        });
+
+    } catch (error) {
+        console.error("Lỗi Verify:", error);
+        res.status(500).json({ message: "Lỗi Server" });
     }
 });
 // --- Chạy Server (giữ nguyên) ---
