@@ -1,7 +1,11 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { ethers } from 'ethers';
 import axios from 'axios';
 import './App.css';
+
+// CẬP NHẬT ĐỊA CHỈ CONTRACT MỚI CỦA BẠN VÀO ĐÂY
+const CONTRACT_ADDRESS = "0x...COPY_DIA_CHI_CONTRACT_MOI_VAO_DAY...";
+
 const contractABI = [
   "function tokenOfOwnerByIndex(address owner, uint256 index) view returns (uint256)",
   "function balanceOf(address owner) view returns (uint256)",
@@ -9,13 +13,22 @@ const contractABI = [
   "function safeTransferFrom(address from, address to, uint256 tokenId)",
   "function burn(uint256 tokenId)"
 ];
-const CONTRACT_ADDRESS = "0xc175142dD7a8a888f328a5D44d0499260Ba8c186";
+
 function App() {
   const [account, setAccount] = useState(null);
-  const [myNFTs, setMyNFTs] = useState([]); // State lưu danh sách NFT
-  const [loading, setLoading] = useState(false);
+  const [myNFTs, setMyNFTs] = useState([]);
+  
+  // State Mint
+  const [formData, setFormData] = useState({ name: '', course: '' });
+  const [mintFile, setMintFile] = useState(null);
+  
+  // State Verify
+  const [verifyFile, setVerifyFile] = useState(null);
+  const [verifyResult, setVerifyResult] = useState(null);
+  
+  const [status, setStatus] = useState('');
 
-  //connectWallet
+  // --- 1. KẾT NỐI VÍ ---
   const connectWallet = async () => {
     if (window.ethereum) {
       const provider = new ethers.BrowserProvider(window.ethereum);
@@ -23,179 +36,163 @@ function App() {
       const signer = await provider.getSigner();
       const address = await signer.getAddress();
       setAccount(address);
-      
-      // Gọi hàm fetch ngay khi kết nối
-      fetchUserNFTs(address, signer);
+      fetchUserNFTs(address, signer); // Load danh sách ngay
+    } else {
+      alert("Chưa cài Metamask!");
     }
   };
-  const fetchUserNFTs = async (userAddress, signer) => {
-    setLoading(true);
+
+  // --- 2. LẤY DANH SÁCH NFT (FIX LỖI IPFS & BIGINT) ---
+  const fetchUserNFTs = async (address, signer) => {
     try {
       const contract = new ethers.Contract(CONTRACT_ADDRESS, contractABI, signer);
-      // Lấy số lượng NFT user đang sở hữu
-      const balance = await contract.balanceOf(userAddress);
-      
-      const items = [];
-      // Duyệt qua từng NFT để lấy Token ID và Metadata
+      const balanceBigInt = await contract.balanceOf(address);
+      const balance = Number(balanceBigInt); // Chuyển BigInt sang Number để loop
+
+      const loadedNFTs = [];
       for (let i = 0; i < balance; i++) {
-        const tokenId = await contract.tokenOfOwnerByIndex(userAddress, i);
-        const tokenURI = await contract.tokenURI(tokenId);
-        
-        // Fetch dữ liệu từ IPFS
-        // Chuyển ipfs:// thành https://ipfs.io/ipfs/
-        const httpURI = tokenURI.replace("ipfs://", "https://gateway.pinata.cloud/ipfs/");
-        const meta = await axios.get(httpURI);
-
-        items.push({
-          tokenId: tokenId.toString(),
-          name: meta.data.name,
-          description: meta.data.description,
-          image: meta.data.image.replace("ipfs://", "https://gateway.pinata.cloud/ipfs/")
-        });
-      }
-      setMyNFTs(items);
-    } catch (error) {
-      console.error("Lỗi fetch NFT:", error);
-    }
-    setLoading(false);
-  };
-  const handleFileChange = (e) => {
-    setSelectedFile(e.target.files[0]);
-  };
-
-  // 3. Hàm gửi yêu cầu Mint
-  const handleMintRequest = async () => {
-    if (!account) return alert("Chưa kết nối ví!");
-    if (!selectedFile) return alert("Vui lòng chọn file chứng chỉ!");
-    
-    setStatus("Đang chuẩn bị dữ liệu...");
-
-    // 4. Tạo FormData để gửi
-    const formDataObj = new FormData();
-    formDataObj.append('userAddress', account);
-    formDataObj.append('name', formData.name);
-    formDataObj.append('course', formData.course);
-    formDataObj.append('certificateFile', selectedFile);
-
-    try {
-      setStatus("Đang upload file và mint...");
-      
-      // 5. Gửi request POST với FormData
-      const response = await axios.post('http://localhost:3001/api/mint', formDataObj, {
-        headers: {
-          'Content-Type': 'multipart/form-data'
+        try {
+          const tokenId = await contract.tokenOfOwnerByIndex(address, i);
+          const tokenURI = await contract.tokenURI(tokenId);
+          
+          // Dùng Gateway công cộng nhanh hơn để tránh lỗi timeout
+          const httpURI = tokenURI.replace("ipfs://", "https://cloudflare-ipfs.com/ipfs/");
+          
+          const metaRes = await axios.get(httpURI);
+          const meta = metaRes.data;
+          
+          loadedNFTs.push({
+            tokenId: tokenId.toString(),
+            name: meta.name,
+            image: meta.image.replace("ipfs://", "https://cloudflare-ipfs.com/ipfs/")
+          });
+        } catch (e) {
+          console.error("Lỗi load 1 NFT:", e);
         }
-      });
-
-      if (response.data.success) {
-        setStatus(`Thành công! Tx Hash: ${response.data.txHash}`);
-      } else {
-        setStatus("Thất bại!");
       }
-    } catch (error) {
-      console.error(error);
-      setStatus("Có lỗi xảy ra khi gọi Server.");
+      setMyNFTs(loadedNFTs);
+    } catch (e) {
+      console.error("Lỗi fetch list:", e);
     }
   };
+
+  // --- 3. MINT (GỌI BACKEND) ---
+  const handleMint = async () => {
+    if (!mintFile || !account) return alert("Thiếu thông tin!");
+    setStatus("⏳ Đang Mint...");
+    
+    const form = new FormData();
+    form.append('userAddress', account);
+    form.append('name', formData.name);
+    form.append('course', formData.course);
+    form.append('certificateFile', mintFile);
+
+    try {
+      const res = await axios.post('http://localhost:3001/api/mint', form);
+      if (res.data.success) {
+        setStatus("✅ Mint thành công!");
+        fetchUserNFTs(account, new ethers.BrowserProvider(window.ethereum).getSigner());
+      }
+    } catch (e) {
+      console.error(e);
+      setStatus("❌ Lỗi Mint");
+    }
+  };
+
+  // --- 4. TRANSFER (FIX LỖI ETHERS V6) ---
   const handleTransfer = async (tokenId) => {
-    const toAddress = prompt("Nhập địa chỉ ví người nhận:");
-    if (!toAddress || !ethers.isAddress(toAddress)) return alert("Địa chỉ không hợp lệ");
+    const to = prompt("Nhập địa chỉ ví nhận:");
+    if (!ethers.isAddress(to)) return alert("Địa chỉ sai!");
 
     try {
       const provider = new ethers.BrowserProvider(window.ethereum);
       const signer = await provider.getSigner();
       const contract = new ethers.Contract(CONTRACT_ADDRESS, contractABI, signer);
+      const from = await signer.getAddress();
 
-      // Gọi hàm safeTransferFrom
-      const tx = await contract.safeTransferFrom(account, toAddress, tokenId);
-      alert(`Đang chuyển NFT... Hash: ${tx.hash}`);
-      await tx.wait();
+      // Cú pháp đặc biệt cho Ethers v6 để gọi hàm overload
+      const tx = await contract["safeTransferFrom(address,address,uint256)"](from, to, tokenId);
       
-      alert("Chuyển thành công!");
-      fetchUserNFTs(account, signer); // Load lại danh sách
-    } catch (error) {
-      console.error(error);
-      alert("Chuyển nhượng thất bại!");
+      setStatus("⏳ Đang chuyển...");
+      await tx.wait();
+      setStatus("✅ Chuyển thành công!");
+      fetchUserNFTs(from, signer);
+    } catch (e) {
+      console.error(e);
+      alert("Lỗi Transfer (Xem console)");
     }
   };
-  const handleRevoke = async (tokenId) => {
-    if (!confirm("Bạn có chắc chắn muốn hủy (xóa vĩnh viễn) chứng chỉ này không?")) return;
+
+  // --- 5. VERIFY (GỌI BACKEND) ---
+  const handleVerify = async () => {
+    if (!verifyFile) return alert("Chọn file cần check!");
+    setStatus("⏳ Đang kiểm tra...");
+    
+    const form = new FormData();
+    form.append('verifyFile', verifyFile);
+    form.append('claimerAddress', account || ""); 
 
     try {
-      const provider = new ethers.BrowserProvider(window.ethereum);
-      const signer = await provider.getSigner();
-      const contract = new ethers.Contract(CONTRACT_ADDRESS, contractABI, signer);
-
-      const tx = await contract.burn(tokenId);
-      alert(`Đang hủy NFT... Hash: ${tx.hash}`);
-      await tx.wait();
-
-      alert("Đã hủy chứng chỉ thành công!");
-      fetchUserNFTs(account, signer); // Load lại danh sách
-    } catch (error) {
-      console.error(error);
-      alert("Hủy thất bại!");
+      const res = await axios.post('http://localhost:3001/api/verify', form);
+      setVerifyResult(res.data);
+      setStatus("✅ Đã có kết quả!");
+    } catch (e) {
+      setStatus("❌ Lỗi Verify");
     }
   };
+
   return (
-    <div className="App">
-      <h1>Hệ thống Cấp Chứng Chỉ Web3</h1>
-        {/* Nút kết nối ví */}
-        {!account ? (
-        <button onClick={connectWallet}>🔗 Kết nối Metamask</button>
-        ) : (
-            <p>Xin chào: <strong>{account}</strong></p>
-            )}
-      <hr />
-      <div className="form-section">
-        <h3>Nhập thông tin để cấp chứng chỉ</h3>
-        <input 
-          type="text" 
-          placeholder="Họ và tên" 
-          onChange={(e) => setFormData({...formData, name: e.target.value})}
-        />
-        <br /><br />
-        <input 
-          type="text" 
-          placeholder="Khóa học / Tài sản" 
-          onChange={(e) => setFormData({...formData, course: e.target.value})}
-        />
-        <br /><br />
-        <label>Chọn file chứng chỉ (Ảnh/PDF):</label>
-        <br />
-        <input 
-          type="file" 
-          onChange={handleFileChange}
-        />
-        <br /><br />
-        <button onClick={handleMintRequest} disabled={!account}>
-          🛠️ Đóng dấu (Mint Certificate)
-        </button>
-      </div>
-      <p style={{ marginTop: "80px", color: "white" }}>{status}</p>
-      {/* PHẦN HIỂN THỊ DANH SÁCH */}
-      <h2>📂 Tài sản của tôi</h2>
-      {loading ? <p>Đang tải danh sách...</p> : (
-        <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
-          {myNFTs.map((nft) => (
-            <div key={nft.tokenId} style={{ border: '1px solid #ddd', padding: '10px', borderRadius: '8px', width: '200px' }}>
-              <img src={nft.image} alt={nft.name} style={{ width: '100%' }} />
-              <h4>{nft.name}</h4>
-              <p>ID: #{nft.tokenId}</p>
-              
-              <div style={{ display: 'flex', gap: '5px' }}>
-                <button onClick={() => handleTransfer(nft.tokenId)} style={{ backgroundColor: '#4CAF50' }}>
-                  Transfer
-                </button>
-                <button onClick={() => handleRevoke(nft.tokenId)} style={{ backgroundColor: '#f44336' }}>
-                  Revoke
-                </button>
-              </div>
-            </div>
-          ))}
+    <div style={{ padding: 20 }}>
+      <h1>Web3 Certificate System</h1>
+      {!account ? <button onClick={connectWallet}>Kết nối Ví</button> : <p>Ví: {account}</p>}
+      
+      <div style={{ display: 'flex', gap: 50 }}>
+        {/* FORM MINT */}
+        <div>
+            <h3>🛠️ 1. Cấp chứng chỉ (Mint)</h3>
+            <input placeholder="Tên" onChange={e => setFormData({...formData, name: e.target.value})} /> <br/>
+            <input placeholder="Khóa học" onChange={e => setFormData({...formData, course: e.target.value})} /> <br/>
+            <input type="file" onChange={e => setMintFile(e.target.files[0])} /> <br/><br/>
+            <button onClick={handleMint}>Mint NFT</button>
         </div>
-      )}
+
+        {/* FORM VERIFY */}
+        <div>
+            <h3>🔍 2. Xác thực tài liệu (Verify)</h3>
+            <p>Upload file gốc (.jpg, .pdf) để kiểm tra trên Blockchain</p>
+            <input type="file" onChange={e => setVerifyFile(e.target.files[0])} /> <br/><br/>
+            <button onClick={handleVerify}>Kiểm tra ngay</button>
+            
+            {verifyResult && (
+                <div style={{ marginTop: 10, padding: 10, background: '#242424' }}>
+                    <b>Kết quả:</b> {verifyResult.verified ? "HỢP LỆ " : "KHÔNG TÌM THẤY "} <br/>
+                    {verifyResult.verified && (
+                        <>
+                            ID: #{verifyResult.tokenId} <br/>
+                            Chủ sở hữu: {verifyResult.currentOwner.slice(0,64)} <br/>
+                            {verifyResult.isYourCert ? " ĐÂY LÀ CỦA BẠN!" : " KHÔNG PHẢI CỦA BẠN"}
+                        </>
+                    )}
+                </div>
+            )}
+        </div>
+      </div>
+
+      <p style={{color: 'white'}}>{status}</p>
+
+      <hr/>
+      <h3>📂 3. Danh sách chứng chỉ của tôi</h3>
+      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+        {myNFTs.map(nft => (
+            <div key={nft.tokenId} style={{ border: '1px solid #ccc', padding: 10, width: 200 }}>
+                <img src={nft.image} width="100%" alt="cert" />
+                <p><b>{nft.name}</b></p>
+                <button onClick={() => handleTransfer(nft.tokenId)}>Transfer</button>
+            </div>
+        ))}
+      </div>
     </div>
   );
 }
+
 export default App;
