@@ -17,6 +17,7 @@ const contractABI = [
 function App() {
   const [account, setAccount] = useState(null);
   const [myNFTs, setMyNFTs] = useState([]);
+  const [isDark, setIsDark] = useState(true);
   
   // State Mint
   const [formData, setFormData] = useState({ name: '', course: '' });
@@ -140,55 +141,129 @@ function App() {
   };
 
   return (
-    <div style={{ padding: 20 }}>
-      <h1>Web3 Certificate System</h1>
-      {!account ? <button onClick={connectWallet}>Kết nối Ví</button> : <p>Ví: {account}</p>}
+    <div className={`app-container ${isDark ? 'dark' : 'light'}`}>
+      <div className="header">
+        <button className="theme-toggle" onClick={() => setIsDark(!isDark)}>
+          {isDark ? '☀️' : '🌙'}
+        </button>
+        <h1>🎓 Web3 Certificate System</h1>
+      </div>
       
-      <div style={{ display: 'flex', gap: 50 }}>
+      <div className="wallet-section">
+        {!account ? (
+          <button className="connect-btn" onClick={connectWallet}>
+            🔗 Kết nối Ví MetaMask
+          </button>
+        ) : (
+          <div className="wallet-info">
+            <strong>💼 Ví đã kết nối:</strong><br/>
+            {account.slice(0, 6)}...{account.slice(-4)}
+          </div>
+        )}
+      </div>
+      
+      <div className="main-content">
         {/* FORM MINT */}
-        <div>
-            <h3>🛠️ 1. Cấp chứng chỉ (Mint)</h3>
-            <input placeholder="Tên" onChange={e => setFormData({...formData, name: e.target.value})} /> <br/>
-            <input placeholder="Khóa học" onChange={e => setFormData({...formData, course: e.target.value})} /> <br/>
-            <input type="file" onChange={e => setMintFile(e.target.files[0])} /> <br/><br/>
-            <button onClick={handleMint}>Mint NFT</button>
+        <div className="section-card">
+          <h3 className="section-title">
+            <span>🛠️</span> Cấp chứng chỉ (Mint)
+          </h3>
+          
+          <div className="form-group">
+            <input 
+              className="form-input"
+              placeholder="Tên người nhận chứng chỉ" 
+              onChange={e => setFormData({...formData, name: e.target.value})} 
+            />
+          </div>
+          
+          <div className="form-group">
+            <input 
+              className="form-input"
+              placeholder="Tên khóa học / chương trình" 
+              onChange={e => setFormData({...formData, course: e.target.value})} 
+            />
+          </div>
+          
+          <div className="form-group">
+            <input 
+              className="file-input"
+              type="file" 
+              onChange={e => setMintFile(e.target.files[0])} 
+            />
+          </div>
+          
+          <button className="action-btn" onClick={handleMint}>
+            ✨ Tạo NFT Chứng chỉ
+          </button>
         </div>
-t
+
         {/* FORM VERIFY */}
-        <div>
-            <h3>🔍 2. Xác thực tài liệu (Verify)</h3>
-            <p>Upload file gốc (.jpg, .pdf) để kiểm tra trên Blockchain</p>
-            <input type="file" onChange={e => setVerifyFile(e.target.files[0])} /> <br/><br/>
-            <button onClick={handleVerify}>Kiểm tra ngay</button>
-            
-            {verifyResult && (
-                <div style={{ marginTop: 10, padding: 10, background: '#242424' }}>
-                    <b>Kết quả:</b> {verifyResult.verified ? "HỢP LỆ " : "KHÔNG TÌM THẤY "} <br/>
-                    {verifyResult.verified && (
-                        <>
-                            ID: #{verifyResult.tokenId} <br/>
-                            Hash: {verifyResult.Hash} <br/>
-                            Chủ sở hữu: {verifyResult.currentOwner.slice(0,64)} <br/>
-                            {verifyResult.isYourCert ? " ĐÂY LÀ CỦA BẠN!" : " KHÔNG PHẢI CỦA BẠN"}
-                        </>
-                    )}
+        <div className="section-card">
+          <h3 className="section-title">
+            <span>🔍</span> Xác thực tài liệu
+          </h3>
+          
+          <p style={{color: '#666', marginBottom: '20px'}}>
+            Upload file gốc (.jpg, .pdf) để kiểm tra trên Blockchain
+          </p>
+          
+          <div className="form-group">
+            <input 
+              className="file-input"
+              type="file" 
+              onChange={e => setVerifyFile(e.target.files[0])} 
+            />
+          </div>
+          
+          <button className="action-btn" onClick={handleVerify}>
+            🔎 Kiểm tra ngay
+          </button>
+          
+          {verifyResult && (
+            <div className={`verify-result ${
+              verifyResult.verified ? 'verify-success' : 'verify-fail'
+            }`}>
+              <div style={{fontSize: '1.1rem', fontWeight: 'bold', marginBottom: '10px'}}>
+                {verifyResult.verified ? '✅ HỢP LỆ' : '❌ KHÔNG TÌM THẤY'}
+              </div>
+              {verifyResult.verified && (
+                <div style={{fontSize: '0.9rem', lineHeight: '1.6'}}>
+                  <div><strong>Token ID:</strong> #{verifyResult.tokenId}</div>
+                  <div><strong>Hash:</strong> {verifyResult.Hash?.slice(0, 20)}...</div>
+                  <div><strong>Chủ sở hữu:</strong> {verifyResult.currentOwner?.slice(0, 10)}...{verifyResult.currentOwner?.slice(-6)}</div>
+                  <div style={{marginTop: '10px', padding: '8px', background: verifyResult.isYourCert ? '#e6fffa' : '#fff5f5', borderRadius: '5px'}}>
+                    {verifyResult.isYourCert ? '🎉 ĐÂY LÀ CHỨNG CHỈ CỦA BẠN!' : '⚠️ KHÔNG PHẢI CHỨNG CHỈ CỦA BẠN'}
+                  </div>
                 </div>
-            )}
+              )}
+            </div>
+          )}
         </div>
       </div>
 
-      <p style={{color: 'white'}}>{status}</p>
+      {status && (
+        <div className="status-bar">
+          {status}
+        </div>
+      )}
 
-      <hr/>
-      <h3>📂 3. Danh sách chứng chỉ của tôi</h3>
-      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-        {myNFTs.map(nft => (
-            <div key={nft.tokenId} style={{ border: '1px solid #ccc', padding: 10, width: 200 }}>
-                <img src={nft.image} width="100%" alt="cert" />
-                <p><b>{nft.name}</b></p>
-                <button onClick={() => handleTransfer(nft.tokenId)}>Transfer</button>
+      <div className="nft-gallery">
+        <h3 className="gallery-title">📂 Danh sách chứng chỉ của tôi</h3>
+        <div className="nft-grid">
+          {myNFTs.map(nft => (
+            <div key={nft.tokenId} className="nft-card">
+              <img src={nft.image} className="nft-image" alt="cert" />
+              <div className="nft-name">{nft.name}</div>
+              <button 
+                className="transfer-btn" 
+                onClick={() => handleTransfer(nft.tokenId)}
+              >
+                📤 Transfer
+              </button>
             </div>
-        ))}
+          ))}
+        </div>
       </div>
     </div>
   );
