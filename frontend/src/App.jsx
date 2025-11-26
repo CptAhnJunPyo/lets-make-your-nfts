@@ -102,13 +102,21 @@ function App() {
     if (!account) return alert("Chưa kết nối ví!");
     if (!selectedFile) return alert("Vui lòng chọn file!");
     
-    setStatus("Đang xử lý...");
+    setStatus("⏳ Đang tạo Metadata chuẩn...");
     
     const form = new FormData();
     form.append('userAddress', account);
-    form.append('name', formData.name);
-    form.append('course', formData.course);
-    form.append('certificateFile', selectedFile);
+    
+    // Append tất cả các trường dữ liệu mới
+    form.append('studentName', formData.studentName);
+    form.append('certName', formData.certName);
+    form.append('issuerName', formData.issuerName);
+    form.append('programName', formData.programName);
+    form.append('description', formData.description);
+    form.append('issuedAt', formData.issuedAt);
+    form.append('externalUrl', formData.externalUrl);
+    
+    form.append('certificateFile', selectedFile); // File ảnh
 
     try {
       const response = await axios.post('http://localhost:3001/api/mint', form, {
@@ -116,17 +124,14 @@ function App() {
       });
 
       if (response.data.success) {
-        setStatus(`Thành công! Tx: ${response.data.txHash.slice(0, 10)}...`);
-        // Reset form
-        setFormData({ name: '', course: '' });
-        setSelectedFile(null);
+        setStatus(`Thành công! Metadata đã đúng chuẩn.`);
         fetchUserNFTs(account, new ethers.BrowserProvider(window.ethereum).getSigner());
-      }
-    } catch (error) {
-      console.error(error);
-      setStatus("Thất bại!");
     }
-  };
+  } catch (error) {
+    console.error(error);
+    setStatus("Thất bại! Xem console.");
+  }
+};
 
   // --- Module 4: TRANSFER NFT ---
   const handleTransfer = async (tokenId) => {
@@ -238,61 +243,90 @@ function App() {
       </header>
 
       <main className="main-content">
-        <div className="container">
-
-          {/* TAB 1: MINT SECTION */}
+      <div className="container">
+          
+          {/* TAB MINT (CẬP NHẬT UI FORM) */}
           {activeTab === 'mint' && (
             <section className="create-section">
               <div className="section-header">
-                <h1 className="page-title">Create Certificate</h1>
-                <p className="page-subtitle">Issue verifiable NFTs on Sepolia Network</p>
+                <h1 className="page-title">Issue Certificate</h1>
+                <p className="page-subtitle">Fill in the details to generate standard JSON Metadata</p>
               </div>
               
               <div className="create-container">
-                {/* Upload Zone */}
+                {/* Upload Zone (Giữ nguyên) */}
                 <div className="upload-area">
-                  <div className="upload-zone">
-                  <input type="file" id="file-upload" className="file-input-hidden" accept="image/*,.pdf"
-                      onChange={(e) => setSelectedFile(e.target.files[0])}
-                    />
-                    <label htmlFor="file-upload" className="upload-label">
-                      {selectedFile ? (
-                        <div className="file-preview">
-                          <div className="file-icon-large">📄</div>
-                          <div className="file-info">
-                            <div className="file-name">{selectedFile.name}</div>
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="upload-placeholder">
-                          <div className="upload-icon">📁</div>
-                          <div className="upload-text">Click to upload Image/PDF</div>
-                        </div>
-                      )}
-                    </label>
-                  </div>
+                    {/* ... (Code Upload UI cũ) ... */}
+                    <div className="upload-zone">
+                        <input type="file" id="file-upload" className="file-input-hidden" onChange={(e) => setSelectedFile(e.target.files[0])} />
+                        <label htmlFor="file-upload" className="upload-label">
+                            {selectedFile ? <div className="file-preview"><div className="file-name">{selectedFile.name}</div></div> : <div className="upload-placeholder">Upload Certificate Image</div>}
+                        </label>
+                    </div>
                 </div>
 
-                {/* Form Input */}
+                {/* Form Input Mới (Nhiều trường hơn) */}
                 <div className="form-panel">
                   <div className="form-content">
-                    <div className="input-group">
-                      <label className="input-label">Recipient Name</label>
-                      <input type="text" className="input-field" placeholder="Full Name"
-                        value={formData.name} onChange={(e) => setFormData({...formData, name: e.target.value})}
-                      />
-                    </div>
                     
+                    {/* Hàng 1: Tên sinh viên & Tên bằng */}
+                    <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px'}}>
+                        <div className="input-group">
+                        <label className="input-label">Student Name</label>
+                        <input type="text" className="input-field" placeholder="Alice Nguyen"
+                            value={formData.studentName} onChange={(e) => setFormData({...formData, studentName: e.target.value})}
+                        />
+                        </div>
+                        <div className="input-group">
+                        <label className="input-label">Certificate Name</label>
+                        <input type="text" className="input-field" placeholder="Bachelor of Science"
+                            value={formData.certName} onChange={(e) => setFormData({...formData, certName: e.target.value})}
+                        />
+                        </div>
+                    </div>
+
+                    {/* Hàng 2: Trường & Ngành */}
+                    <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px'}}>
+                        <div className="input-group">
+                        <label className="input-label">Issuer (University)</label>
+                        <input type="text" className="input-field" placeholder="ABC University"
+                            value={formData.issuerName} onChange={(e) => setFormData({...formData, issuerName: e.target.value})}
+                        />
+                        </div>
+                        <div className="input-group">
+                        <label className="input-label">Program / Major</label>
+                        <input type="text" className="input-field" placeholder="Computer Science"
+                            value={formData.programName} onChange={(e) => setFormData({...formData, programName: e.target.value})}
+                        />
+                        </div>
+                    </div>
+
+                    {/* Hàng 3: Ngày cấp & External URL */}
+                    <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px'}}>
+                        <div className="input-group">
+                        <label className="input-label">Issued At</label>
+                        <input type="date" className="input-field"
+                            value={formData.issuedAt} onChange={(e) => setFormData({...formData, issuedAt: e.target.value})}
+                        />
+                        </div>
+                        <div className="input-group">
+                        <label className="input-label">Verification URL</label>
+                        <input type="text" className="input-field" placeholder="https://..."
+                            value={formData.externalUrl} onChange={(e) => setFormData({...formData, externalUrl: e.target.value})}
+                        />
+                        </div>
+                    </div>
+
                     <div className="input-group">
-                      <label className="input-label">Course / Program</label>
-                      <input type="text" className="input-field" placeholder="Course Name"
-                        value={formData.course} onChange={(e) => setFormData({...formData, course: e.target.value})}
+                      <label className="input-label">Description</label>
+                      <textarea className="input-field" rows="3" placeholder="Additional details..."
+                        value={formData.description} onChange={(e) => setFormData({...formData, description: e.target.value})}
                       />
                     </div>
                     
                     <button className="create-btn" onClick={handleMintRequest} 
-                      disabled={!account || !formData.name || !formData.course || !selectedFile}>
-                      Mint Certificate
+                      disabled={!account || !formData.studentName || !selectedFile}>
+                      Mint Standard Certificate
                     </button>
                     
                     {status && <div className="status-alert">{status}</div>}
