@@ -78,7 +78,7 @@ function App() {
         try {
           const tokenId = await contract.tokenOfOwnerByIndex(address, i);
           const tokenURI = await contract.tokenURI(tokenId);
-          const httpURI = tokenURI.replace("ipfs://", "https://cloudflare-ipfs.com/ipfs/");
+          const httpURI = tokenURI.replace("ipfs://", "https://gateway.pinata.cloud/ipfs/");
           
           const metaRes = await axios.get(httpURI);
           const meta = metaRes.data;
@@ -86,7 +86,7 @@ function App() {
           loadedNFTs.push({
             tokenId: tokenId.toString(),
             name: meta.name,
-            image: meta.image.replace("ipfs://", "https://cloudflare-ipfs.com/ipfs/")
+            image: meta.image.replace("ipfs://", "https://gateway.pinata.cloud/ipfs/")
           });
         } catch (e) {
           console.error("Lỗi load 1 NFT:", e);
@@ -306,7 +306,7 @@ function App() {
           {activeTab === 'portfolio' && (
             <section className="portfolio-section">
               <div className="section-header">
-                <h1 className="page-title">My Assets</h1>
+                <h1 className="page-title">My Certificates</h1>
                 <p className="page-subtitle">Manage your blockchain assets</p>
               </div>
               {loading ? (
@@ -419,13 +419,13 @@ function App() {
                    
                    {verifyResult && (
                       <div className={`verify-result ${verifyResult.verified ? 'valid' : 'invalid'}`}>
-                        <h3>{verifyResult.verified ? "✅ VALID DOCUMENT" : "❌ INVALID DOCUMENT"}</h3>
+                        <h3>{verifyResult.verified ? "VALID DOCUMENT" : " INVALID DOCUMENT"}</h3>
                         {verifyResult.verified && (
                           <div className="verify-details">
                             <p><strong>Token ID:</strong> #{verifyResult.tokenId}</p>
                             <p><strong>Owner:</strong> {verifyResult.currentOwner}</p>
                             <p className="ownership-tag">
-                              {verifyResult.isYourCert ? "🎉 You own this!" : "⚠️ You do NOT own this."}
+                              {verifyResult.isYourCert ? " You own this!" : " You do NOT own this."}
                             </p>
                           </div>
                         )}

@@ -6,7 +6,6 @@ const pinataSDK = require('@pinata/sdk');
 const fs = require('fs');
 const multer = require('multer');
 const crypto = require('crypto');
-const OpenAI = require('openai');
 // Cấu hình
 const app = express();
 app.use(cors());
@@ -26,9 +25,7 @@ const contractABI = [
 const contract = new ethers.Contract(process.env.CONTRACT_ADDRESS, contractABI, wallet);
 const readContract = new ethers.Contract(process.env.CONTRACT_ADDRESS, contractABI, provider);
 const pinata = new pinataSDK(process.env.PINATA_API_KEY, process.env.PINATA_SECRET_KEY);
-const openai = new OpenAI({
-    apiKey: process.env.OPENAI_API_KEY,
-});
+
 // --- API ENDPOINT: MINT NFT ---
 app.post('/api/mint', upload.single('certificateFile'), async (req, res) => {
     try {
@@ -114,14 +111,19 @@ app.post('/api/verify', upload.single('verifyFile'), async (req, res) => {
 
         const currentOwner = await readContract.ownerOf(tokenId);
         const isOwner = claimerAddress && (currentOwner.toLowerCase() === claimerAddress.toLowerCase());
-
-        res.json({
-            verified: true,
-            tokenId,
-            currentOwner,
-            isYourCert: isOwner,
-            message: "Tài liệu HỢP LỆ trên Blockchain."
-        });
+        if (!isOwner) {
+            return res.json({ verified: false, message:" Tài liệu này KHÔNG thuộc về bạn." });
+        }
+        else{
+            res.json({
+                verified: true,
+                tokenId,
+                currentOwner,
+                isYourCert: isOwner,
+                message: "Tài liệu HỢP LỆ trên Blockchain."
+            });
+        }
+        console.log("Verify status:", isOwner);
 
     } catch (error) {
         console.error("Lỗi Verify:", error);
