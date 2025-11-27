@@ -3,6 +3,7 @@
 @import './styles/layout.css';
 @import './styles/navbar.css';
 @import './styles/animations.css';
+@import './styles/tutorial-button.css';
 @import './styles/mobile.css';
 
 /* --- CREATE & VERIFY LAYOUT --- */
@@ -488,13 +489,14 @@
 
 /* Verify Results */
 .verify-result { 
-  margin-top: 2rem; 
-  padding: 2rem; 
-  border-radius: var(--radius-lg); 
+  margin-top: 2.5rem; 
+  padding: 2.5rem; 
+  border-radius: var(--radius-2xl); 
   text-align: center; 
   animation: slideInUp 0.5s ease-out;
   position: relative;
   overflow: hidden;
+  backdrop-filter: blur(12px);
 }
 
 .verify-result::before {
@@ -507,14 +509,16 @@
 }
 
 .verify-result.valid { 
-  background: linear-gradient(135deg, rgba(34, 197, 94, 0.1), rgba(16, 185, 129, 0.1)); 
+  background: linear-gradient(135deg, rgba(34, 197, 94, 0.12), rgba(16, 185, 129, 0.08)); 
   border: 2px solid rgba(34, 197, 94, 0.3); 
   color: var(--success-color);
-  box-shadow: 0 4px 20px rgba(34, 197, 94, 0.2);
+  box-shadow: var(--shadow-lg), 0 0 30px rgba(34, 197, 94, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.1);
 }
 
 .verify-result.valid::before {
-  background: linear-gradient(135deg, var(--success-color), #10b981);
+  background: linear-gradient(135deg, var(--success-color) 0%, #10b981 100%);
+  box-shadow: 0 0 20px rgba(34, 197, 94, 0.5);
+  animation: glow 2s ease-in-out infinite alternate;
 }
 
 .verify-result.valid h3 {
@@ -534,14 +538,16 @@
 }
 
 .verify-result.invalid { 
-  background: linear-gradient(135deg, rgba(239, 68, 68, 0.1), rgba(220, 38, 38, 0.1)); 
+  background: linear-gradient(135deg, rgba(239, 68, 68, 0.12), rgba(220, 38, 38, 0.08)); 
   border: 2px solid rgba(239, 68, 68, 0.3); 
   color: var(--error-color);
-  box-shadow: 0 4px 20px rgba(239, 68, 68, 0.2);
+  box-shadow: var(--shadow-lg), 0 0 30px rgba(239, 68, 68, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.1);
 }
 
 .verify-result.invalid::before {
-  background: linear-gradient(135deg, var(--error-color), #dc2626);
+  background: linear-gradient(135deg, var(--error-color) 0%, #dc2626 100%);
+  box-shadow: 0 0 20px rgba(239, 68, 68, 0.5);
+  animation: glow 2s ease-in-out infinite alternate;
 }
 
 .verify-result.invalid h3 {

@@ -1,3 +1,5 @@
+import ThemeToggle from './ThemeToggle';
+
 function Header({ account, activeTab, setActiveTab, darkMode, toggleTheme, connectWallet }) {
   return (
     <header className="navbar">
@@ -11,23 +13,23 @@ function Header({ account, activeTab, setActiveTab, darkMode, toggleTheme, conne
         
         <nav className="nav-center">
           <button className={`nav-link ${activeTab === 'mint' ? 'active' : ''}`} onClick={() => setActiveTab('mint')}>
-            Create
+            <span className="nav-link-text">Create</span>
           </button>
           <button className={`nav-link ${activeTab === 'portfolio' ? 'active' : ''}`} onClick={() => setActiveTab('portfolio')}>
-            Portfolio
+            <span className="nav-link-text">Portfolio</span>
           </button>
           <button className={`nav-link ${activeTab === 'verify' ? 'active' : ''}`} onClick={() => setActiveTab('verify')}>
-            Verify
+            <span className="nav-link-text">Verify</span>
           </button>
         </nav>
 
         <div className="nav-right">
-          <button className="theme-toggle" onClick={toggleTheme}>
-            {darkMode ? '☀️' : '🌙'}
-          </button>
+          <ThemeToggle darkMode={darkMode} toggleTheme={toggleTheme} />
           
           {!account ? (
-            <button className="connect-wallet-btn" onClick={connectWallet}>Connect Wallet</button>
+            <button className="connect-wallet-btn" onClick={connectWallet}>
+              <span className="btn-text">Connect Wallet</span>
+            </button>
           ) : (
             <div className="wallet-connected">
               <span className="wallet-address">{account.slice(0,6)}...{account.slice(-4)}</span>
