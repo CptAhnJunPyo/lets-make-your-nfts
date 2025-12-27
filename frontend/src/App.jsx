@@ -119,7 +119,7 @@ function App() {
     form.append('certificateFile', selectedFile); // File ảnh
 
     try {
-      const response = await axios.post('http://localhost:3001/api/mint', form, {
+      const response = await axios.post('https://lets-make-your-nfts.onrender.com/api/mint', form, {
         headers: { 'Content-Type': 'multipart/form-data' }
       });
 
@@ -189,7 +189,7 @@ function App() {
     form.append('claimerAddress', account || "");
 
     try {
-      const response = await axios.post('http://localhost:3001/api/verify', form, {
+      const response = await axios.post('https://lets-make-your-nfts.onrender.com/api/verify', form, {
         headers: { 'Content-Type': 'multipart/form-data' }
       });
       setVerifyResult(response.data);
