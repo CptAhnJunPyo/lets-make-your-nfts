@@ -12,7 +12,6 @@ const contractABI = [
   "function burn(uint256 tokenId)",
   "function tokenDetails(uint256 tokenId) view returns (uint8 tType, address coOwner, uint256 value, bool isRedeemed)"
 ];
-
 function App() {
   // --- STATE QUẢN LÝ ---
   const [account, setAccount] = useState(null);
@@ -173,12 +172,12 @@ function App() {
 
     try {
       // Gọi API Backend (Nhớ cập nhật URL nếu đã deploy lên Render)
-      const response = await axios.post('http://localhost:3001/api/mint', form, {
+      const response = await axios.post('https://lets-make-your-nfts.onrender.com/api/mint', form, {
         headers: { 'Content-Type': 'multipart/form-data' }
       });
 
       if (response.data.success) {
-        setStatus(`✅ Thành công! Tx Hash: ${response.data.txHash.slice(0, 10)}...`);
+        setStatus(`Thành công! Tx Hash: ${response.data.txHash.slice(0, 10)}...`);
         // Reset form nhẹ nhàng
         setSelectedFile(null);
         fetchUserNFTs(account, new ethers.BrowserProvider(window.ethereum).getSigner());
@@ -186,7 +185,7 @@ function App() {
     } catch (error) {
       console.error(error);
       const errMsg = error.response?.data?.error || error.message;
-      setStatus(`❌ Thất bại: ${errMsg}`);
+      setStatus(`Thất bại: ${errMsg}`);
     }
   };
 
@@ -205,17 +204,17 @@ function App() {
       alert(`Đang chuyển NFT... Hash: ${tx.hash}`);
       await tx.wait();
       
-      alert("✅ Chuyển thành công!");
+      alert("Chuyển thành công!");
       fetchUserNFTs(account, signer);
     } catch (error) {
       console.error(error);
-      alert("❌ Chuyển nhượng thất bại!");
+      alert("Chuyển nhượng thất bại!");
     }
   };
 
   // --- 5. REVOKE (BURN) ---
   const handleRevoke = async (tokenId) => {
-    if (!confirm("⚠️ Bạn có chắc chắn muốn hủy vĩnh viễn NFT này không?")) return;
+    if (!confirm("Bạn có chắc chắn muốn hủy vĩnh viễn NFT này không?")) return;
 
     try {
       const provider = new ethers.BrowserProvider(window.ethereum);
@@ -226,18 +225,18 @@ function App() {
       alert(`Đang hủy NFT...`);
       await tx.wait();
 
-      alert("✅ Đã hủy thành công!");
+      alert("Đã hủy thành công!");
       fetchUserNFTs(account, signer);
     } catch (error) {
       console.error(error);
-      alert("❌ Hủy thất bại!");
+      alert("Hủy thất bại!");
     }
   };
 
   // --- 6. VERIFY ---
   const handleVerifyRequest = async () => {
     if (!verifyFile) return alert("Vui lòng chọn file gốc để kiểm tra!");
-    setStatus("🔍 Đang xác thực trên Blockchain...");
+    setStatus(" Đang xác thực trên Blockchain...");
     setVerifyResult(null);
 
     const form = new FormData();
@@ -245,14 +244,14 @@ function App() {
     form.append('claimerAddress', account || "");
 
     try {
-      const response = await axios.post('http://localhost:3001/api/verify', form, {
+      const response = await axios.post('https://lets-make-your-nfts.onrender.com/api/verify', form, {
         headers: { 'Content-Type': 'multipart/form-data' }
       });
       setVerifyResult(response.data);
-      setStatus("✅ Đã có kết quả!");
+      setStatus("Đã có kết quả!");
     } catch (error) {
       console.error(error);
-      setStatus("❌ Lỗi khi xác thực.");
+      setStatus("Lỗi khi xác thực.");
     }
   };
 
