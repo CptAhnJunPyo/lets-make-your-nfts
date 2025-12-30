@@ -3,18 +3,18 @@ import { ethers } from 'ethers';
 import axios from 'axios';
 import './App.css';
 
-// --- CẤU HÌNH CONTRACT ---
-const CONTRACT_ADDRESS = "0x95C23FFD28612884bd47468f776849B427D77D57";
+const CONTRACT_ADDRESS = "0x58d9A8149386b548b7e9798717C71132e5e9EF26";
 const contractABI = [
   "function tokenOfOwnerByIndex(address owner, uint256 index) view returns (uint256)",
   "function balanceOf(address owner) view returns (uint256)",
   "function tokenURI(uint256 tokenId) view returns (string)",
   "function safeTransferFrom(address from, address to, uint256 tokenId)",
-  "function burn(uint256 tokenId)"
+  "function burn(uint256 tokenId)",
+  "function tokenDetails(uint256 tokenId) view returns (uint8 tType, address coOwner, uint256 value, bool isRedeemed)"
 ];
 
 function App() {
-  // --- Managing State---
+  // --- STATE QUẢN LÝ ---
   const [account, setAccount] = useState(null);
   const [myNFTs, setMyNFTs] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -24,9 +24,23 @@ function App() {
   const [activeTab, setActiveTab] = useState('mint'); // 'mint' | 'portfolio' | 'verify'
   const [darkMode, setDarkMode] = useState(false);
 
-  // Mint Form State
-  const [formData, setFormData] = useState({ name: '', course: '' });
+  // --- STATE CHO FORM MINT (NÂNG CẤP) ---
+  const [nftType, setNftType] = useState('standard'); // 'standard', 'joint', 'voucher'
   const [selectedFile, setSelectedFile] = useState(null);
+  
+  const [formData, setFormData] = useState({ 
+      studentName: '', 
+      certName: 'Certificate of Achievement', 
+      issuerName: 'ABC Organization',
+      programName: '',
+      description: '',
+      issuedAt: new Date().toISOString().split('T')[0],
+      externalUrl: '',
+      // Field riêng cho Joint
+      coOwner: '',
+      // Field riêng cho Voucher
+      voucherValue: ''
+  });
 
   // Verify Form State
   const [verifyFile, setVerifyFile] = useState(null);
@@ -48,7 +62,7 @@ function App() {
     localStorage.setItem('theme', newTheme ? 'dark' : 'light');
   };
 
-  // --- LOGIC 1: KẾT NỐI VÍ ---
+  // --- 1. KẾT NỐI VÍ ---
   const connectWallet = async () => {
     if (window.ethereum) {
       try {
@@ -60,54 +74,90 @@ function App() {
         fetchUserNFTs(address, signer);
       } catch (error) {
         console.error(error);
+        alert("Lỗi kết nối ví: " + error.message);
       }
     } else {
       alert("Vui lòng cài đặt Metamask!");
     }
   };
 
-  // --- LOGIC 2: LẤY DANH SÁCH NFT ---
-  const fetchUserNFTs = async (address, signer) => {
+  // --- 2. LẤY DANH SÁCH NFT (CÓ PHÂN LOẠI) ---
+  const fetchUserNFTs = async (userAddress, signer) => {
+    setLoading(true);
+    setMyNFTs([]);
+    
     try {
       const contract = new ethers.Contract(CONTRACT_ADDRESS, contractABI, signer);
-      const balanceBigInt = await contract.balanceOf(address);
-      const balance = Number(balanceBigInt); // Chuyển BigInt sang Number để loop
+      const balanceBigInt = await contract.balanceOf(userAddress);
+      const balance = Number(balanceBigInt);
 
-      const loadedNFTs = [];
+      const items = [];
       for (let i = 0; i < balance; i++) {
         try {
-          const tokenId = await contract.tokenOfOwnerByIndex(address, i);
+          const tokenId = await contract.tokenOfOwnerByIndex(userAddress, i);
+          
+          // Lấy Metadata IPFS
           const tokenURI = await contract.tokenURI(tokenId);
-          const httpURI = tokenURI.replace("ipfs://", "https://gateway.pinata.cloud/ipfs/");
+          const httpURI = tokenURI.replace("ipfs://", "https://cloudflare-ipfs.com/ipfs/");
           
-          const metaRes = await axios.get(httpURI);
-          const meta = metaRes.data;
-          
-          loadedNFTs.push({
+          let meta = { name: `NFT #${tokenId}`, description: "", image: "" };
+          try {
+             const metaRes = await axios.get(httpURI);
+             meta = metaRes.data;
+          } catch(e) { console.warn("Lỗi fetch meta IPFS", e); }
+
+          // Lấy thông tin mở rộng từ Blockchain (Type, Value, ...)
+          let typeLabel = "Standard";
+          let extraInfo = "";
+          try {
+             const details = await contract.tokenDetails(tokenId);
+             // details = [tType (0,1,2), coOwner, value, isRedeemed]
+             const typeCode = Number(details[0]);
+             
+             if (typeCode === 1) {
+                 typeLabel = "Joint Contract";
+                 extraInfo = `Co-Owner: ${details[1].slice(0,6)}...`;
+             } else if (typeCode === 2) {
+                 typeLabel = "Voucher";
+                 extraInfo = `Value: $${details[2]} ${details[3] ? '(Used)' : ''}`;
+             }
+          } catch(e) { console.warn("Lỗi fetch tokenDetails", e); }
+
+          items.push({
             tokenId: tokenId.toString(),
             name: meta.name,
-            image: meta.image.replace("ipfs://", "https://gateway.pinata.cloud/ipfs/")
+            description: meta.description,
+            image: meta.image ? meta.image.replace("ipfs://", "https://cloudflare-ipfs.com/ipfs/") : "",
+            typeLabel,
+            extraInfo
           });
-        } catch (e) {
-          console.error("Lỗi load 1 NFT:", e);
+        } catch (err) {
+          console.error("Lỗi load item:", err);
         }
       }
-      setMyNFTs(loadedNFTs);
-    } catch (e) {
-      console.error("Lỗi fetch list:", e);
+      setMyNFTs(items);
+    } catch (error) {
+      console.error("Lỗi fetch NFT:", error);
     }
+    setLoading(false);
   };
-  // --- LOGIC 3: MINT NFT ---
+
+  // --- 3. MINT REQUEST (XỬ LÝ FORM ĐỘNG) ---
   const handleMintRequest = async () => {
     if (!account) return alert("Chưa kết nối ví!");
-    if (!selectedFile) return alert("Vui lòng chọn file!");
+    if (!selectedFile) return alert("Vui lòng chọn file ảnh/PDF!");
     
-    setStatus("⏳ Đang tạo Metadata chuẩn...");
+    // Validate dữ liệu riêng
+    if (nftType === 'joint' && !ethers.isAddress(formData.coOwner)) return alert("Địa chỉ Co-Owner không hợp lệ!");
+    if (nftType === 'voucher' && !formData.voucherValue) return alert("Vui lòng nhập giá trị Voucher!");
+
+    setStatus("⏳ Đang xử lý Mint...");
     
     const form = new FormData();
     form.append('userAddress', account);
-    
-    // Append tất cả các trường dữ liệu mới
+    form.append('type', nftType); // Gửi loại NFT để Backend biết đường xử lý
+
+    // Append các trường chung
     form.append('studentName', formData.studentName);
     form.append('certName', formData.certName);
     form.append('issuerName', formData.issuerName);
@@ -115,25 +165,32 @@ function App() {
     form.append('description', formData.description);
     form.append('issuedAt', formData.issuedAt);
     form.append('externalUrl', formData.externalUrl);
-    
-    form.append('certificateFile', selectedFile); // File ảnh
+    form.append('certificateFile', selectedFile);
+
+    // Append trường riêng biệt
+    if (nftType === 'joint') form.append('coOwner', formData.coOwner);
+    if (nftType === 'voucher') form.append('voucherValue', formData.voucherValue);
 
     try {
-      const response = await axios.post('https://lets-make-your-nfts.onrender.com/api/mint', form, {
+      // Gọi API Backend (Nhớ cập nhật URL nếu đã deploy lên Render)
+      const response = await axios.post('http://localhost:3001/api/mint', form, {
         headers: { 'Content-Type': 'multipart/form-data' }
       });
 
       if (response.data.success) {
-        setStatus(`Thành công! Metadata đã đúng chuẩn.`);
+        setStatus(`✅ Thành công! Tx Hash: ${response.data.txHash.slice(0, 10)}...`);
+        // Reset form nhẹ nhàng
+        setSelectedFile(null);
         fetchUserNFTs(account, new ethers.BrowserProvider(window.ethereum).getSigner());
+      }
+    } catch (error) {
+      console.error(error);
+      const errMsg = error.response?.data?.error || error.message;
+      setStatus(`❌ Thất bại: ${errMsg}`);
     }
-  } catch (error) {
-    console.error(error);
-    setStatus("Thất bại! Xem console.");
-  }
-};
+  };
 
-  // --- Module 4: TRANSFER NFT ---
+  // --- 4. TRANSFER ---
   const handleTransfer = async (tokenId) => {
     const toAddress = prompt("Nhập địa chỉ ví người nhận:");
     if (!toAddress || !ethers.isAddress(toAddress)) return alert("Địa chỉ không hợp lệ");
@@ -144,22 +201,21 @@ function App() {
       const contract = new ethers.Contract(CONTRACT_ADDRESS, contractABI, signer);
       const from = await signer.getAddress();
 
-      // Gọi hàm overload của Ethers v6
       const tx = await contract["safeTransferFrom(address,address,uint256)"](from, toAddress, tokenId);
       alert(`Đang chuyển NFT... Hash: ${tx.hash}`);
       await tx.wait();
       
-      alert("Chuyển thành công!");
+      alert("✅ Chuyển thành công!");
       fetchUserNFTs(account, signer);
     } catch (error) {
       console.error(error);
-      alert("Chuyển nhượng thất bại!");
+      alert("❌ Chuyển nhượng thất bại!");
     }
   };
 
-  // --- LOGIC 5: REVOKE (BURN) NFT ---
+  // --- 5. REVOKE (BURN) ---
   const handleRevoke = async (tokenId) => {
-    if (!confirm("Bạn có chắc chắn muốn hủy vĩnh viễn chứng chỉ này không?")) return;
+    if (!confirm("⚠️ Bạn có chắc chắn muốn hủy vĩnh viễn NFT này không?")) return;
 
     try {
       const provider = new ethers.BrowserProvider(window.ethereum);
@@ -170,15 +226,15 @@ function App() {
       alert(`Đang hủy NFT...`);
       await tx.wait();
 
-      alert("Đã hủy thành công!");
+      alert("✅ Đã hủy thành công!");
       fetchUserNFTs(account, signer);
     } catch (error) {
       console.error(error);
-      alert("Hủy thất bại!");
+      alert("❌ Hủy thất bại!");
     }
   };
 
-  // --- LOGIC 6: VERIFY NFT ---
+  // --- 6. VERIFY ---
   const handleVerifyRequest = async () => {
     if (!verifyFile) return alert("Vui lòng chọn file gốc để kiểm tra!");
     setStatus("🔍 Đang xác thực trên Blockchain...");
@@ -189,14 +245,14 @@ function App() {
     form.append('claimerAddress', account || "");
 
     try {
-      const response = await axios.post('https://lets-make-your-nfts.onrender.com/api/verify', form, {
+      const response = await axios.post('http://localhost:3001/api/verify', form, {
         headers: { 'Content-Type': 'multipart/form-data' }
       });
       setVerifyResult(response.data);
-      setStatus("Đã có kết quả!");
+      setStatus("✅ Đã có kết quả!");
     } catch (error) {
       console.error(error);
-      setStatus("Lỗi khi xác thực.");
+      setStatus("❌ Lỗi khi xác thực.");
     }
   };
 
@@ -208,36 +264,17 @@ function App() {
       <header className="navbar">
         <div className="nav-container">
           <div className="nav-left">
-            <div className="logo">
-              <span className="logo-icon">🎓</span>
-              <span className="logo-text">CertiFi</span>
-            </div>
+            <div className="logo"><span className="logo-icon">🎓</span><span className="logo-text">CertiFi</span></div>
           </div>
-          
           <nav className="nav-center">
-            <button className={`nav-link ${activeTab === 'mint' ? 'active' : ''}`} onClick={() => setActiveTab('mint')}>
-              Create
-            </button>
-            <button className={`nav-link ${activeTab === 'portfolio' ? 'active' : ''}`} onClick={() => setActiveTab('portfolio')}>
-              Portfolio
-            </button>
-            <button className={`nav-link ${activeTab === 'verify' ? 'active' : ''}`} onClick={() => setActiveTab('verify')}>
-              Verify
-            </button>
+            <button className={`nav-link ${activeTab === 'mint' ? 'active' : ''}`} onClick={() => setActiveTab('mint')}>Create</button>
+            <button className={`nav-link ${activeTab === 'portfolio' ? 'active' : ''}`} onClick={() => setActiveTab('portfolio')}>Portfolio</button>
+            <button className={`nav-link ${activeTab === 'verify' ? 'active' : ''}`} onClick={() => setActiveTab('verify')}>Verify</button>
           </nav>
-
           <div className="nav-right">
-            <button className="theme-toggle" onClick={toggleTheme}>
-              {darkMode ? '☀️' : '🌙'}
-            </button>
-            
-            {!account ? (
-              <button className="connect-wallet-btn" onClick={connectWallet}>Connect Wallet</button>
-            ) : (
-              <div className="wallet-connected">
-                <span className="wallet-address">{account.slice(0,6)}...{account.slice(-4)}</span>
-              </div>
-            )}
+            <button className="theme-toggle" onClick={toggleTheme}>{darkMode ? '☀️' : '🌙'}</button>
+            {!account ? <button className="connect-wallet-btn" onClick={connectWallet}>Connect Wallet</button> : 
+            <div className="wallet-connected"><span className="wallet-address">{account.slice(0,6)}...{account.slice(-4)}</span></div>}
           </div>
         </div>
       </header>
@@ -245,88 +282,91 @@ function App() {
       <main className="main-content">
       <div className="container">
           
-          {/* TAB MINT (CẬP NHẬT UI FORM) */}
           {activeTab === 'mint' && (
             <section className="create-section">
               <div className="section-header">
-                <h1 className="page-title">Issue Certificate</h1>
-                <p className="page-subtitle">Fill in the details to generate standard JSON Metadata</p>
+                <h1 className="page-title">Issue New NFT</h1>
+                <p className="page-subtitle">Select type: Certificate, Contract, or Voucher</p>
               </div>
               
               <div className="create-container">
-                {/* Upload Zone (Giữ nguyên) */}
                 <div className="upload-area">
-                    {/* ... (Code Upload UI cũ) ... */}
                     <div className="upload-zone">
                         <input type="file" id="file-upload" className="file-input-hidden" onChange={(e) => setSelectedFile(e.target.files[0])} />
                         <label htmlFor="file-upload" className="upload-label">
-                            {selectedFile ? <div className="file-preview"><div className="file-name">{selectedFile.name}</div></div> : <div className="upload-placeholder">Upload Certificate Image</div>}
+                            {selectedFile ? <div className="file-preview"><div className="file-name">{selectedFile.name}</div></div> : <div className="upload-placeholder">Upload File</div>}
                         </label>
                     </div>
                 </div>
 
-                {/* Form Input Mới (Nhiều trường hơn) */}
                 <div className="form-panel">
                   <div className="form-content">
                     
-                    {/* Hàng 1: Tên sinh viên & Tên bằng */}
-                    <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px'}}>
-                        <div className="input-group">
-                        <label className="input-label">Student Name</label>
-                        <input type="text" className="input-field" placeholder="Alice Nguyen"
-                            value={formData.studentName} onChange={(e) => setFormData({...formData, studentName: e.target.value})}
-                        />
-                        </div>
-                        <div className="input-group">
-                        <label className="input-label">Certificate Name</label>
-                        <input type="text" className="input-field" placeholder="Bachelor of Science"
-                            value={formData.certName} onChange={(e) => setFormData({...formData, certName: e.target.value})}
-                        />
-                        </div>
-                    </div>
-
-                    {/* Hàng 2: Trường & Ngành */}
-                    <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px'}}>
-                        <div className="input-group">
-                        <label className="input-label">Issuer (University)</label>
-                        <input type="text" className="input-field" placeholder="ABC University"
-                            value={formData.issuerName} onChange={(e) => setFormData({...formData, issuerName: e.target.value})}
-                        />
-                        </div>
-                        <div className="input-group">
-                        <label className="input-label">Program / Major</label>
-                        <input type="text" className="input-field" placeholder="Computer Science"
-                            value={formData.programName} onChange={(e) => setFormData({...formData, programName: e.target.value})}
-                        />
-                        </div>
-                    </div>
-
-                    {/* Hàng 3: Ngày cấp & External URL */}
-                    <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px'}}>
-                        <div className="input-group">
-                        <label className="input-label">Issued At</label>
-                        <input type="date" className="input-field"
-                            value={formData.issuedAt} onChange={(e) => setFormData({...formData, issuedAt: e.target.value})}
-                        />
-                        </div>
-                        <div className="input-group">
-                        <label className="input-label">Verification URL</label>
-                        <input type="text" className="input-field" placeholder="https://..."
-                            value={formData.externalUrl} onChange={(e) => setFormData({...formData, externalUrl: e.target.value})}
-                        />
-                        </div>
-                    </div>
-
                     <div className="input-group">
-                      <label className="input-label">Description</label>
-                      <textarea className="input-field" rows="3" placeholder="Additional details..."
-                        value={formData.description} onChange={(e) => setFormData({...formData, description: e.target.value})}
-                      />
+                        <label className="input-label">NFT Type</label>
+                        <select className="input-field" value={nftType} onChange={(e) => setNftType(e.target.value)} style={{height: '45px', fontWeight: 'bold'}}>
+                            <option value="standard">Standard Certificate</option>
+                            <option value="joint">Joint Contract</option>
+                            <option value="voucher">VIP Voucher</option>
+                        </select>
+                    </div>
+
+                    
+                    {nftType === 'joint' && (
+                         <div className="input-group highlight-box" style={{background: '#eff6ff', padding: 15, borderRadius: 8, border: '1px solid #bfdbfe'}}>
+                             <label className="input-label" style={{color: '#1d4ed8', fontWeight: 'bold'}}>Partner Wallet Address</label>
+                             <input type="text" className="input-field" placeholder="0x..." value={formData.coOwner} onChange={(e) => setFormData({...formData, coOwner: e.target.value})} />
+                             <small style={{color:'#64748b'}}>The person who co-owns this contract.</small>
+                         </div>
+                    )}
+
+                    {nftType === 'voucher' && (
+                         <div className="input-group highlight-box" style={{background: '#fffbeb', padding: 15, borderRadius: 8, border: '1px solid #fde68a'}}>
+                             <label className="input-label" style={{color: '#b45309', fontWeight: 'bold'}}>Voucher Value ($)</label>
+                             <input type="number" className="input-field" placeholder="50" value={formData.voucherValue} onChange={(e) => setFormData({...formData, voucherValue: e.target.value})} />
+                         </div>
+                    )}
+
+                    <div className="input-group" style={{marginTop: '15px'}}>
+                        <label className="input-label">Title / Name</label>
+                        <input type="text" className="input-field" 
+                            placeholder={nftType === 'standard' ? "Bachelor of Science" : (nftType === 'joint' ? "House Rental Agreement" : "Gift Card $50")}
+                            value={formData.certName} onChange={(e) => setFormData({...formData, certName: e.target.value})} 
+                        />
                     </div>
                     
-                    <button className="create-btn" onClick={handleMintRequest} 
-                      disabled={!account || !formData.studentName || !selectedFile}>
-                      Mint Standard Certificate
+                    <div className="input-group">
+                      <label className="input-label">Description</label>
+                      <textarea className="input-field" rows="2" placeholder="Details about this item..." value={formData.description} onChange={(e) => setFormData({...formData, description: e.target.value})} />
+                    </div>
+
+                    {nftType === 'standard' && (
+                        <div style={{marginTop: '15px', padding: '15px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0'}}>
+                            <h4 style={{margin: '0 0 10px 0', color: '#475569'}}>Certificate Details</h4>
+                            <div className="input-group">
+                                <label className="input-label">Recipient Name</label>
+                                <input type="text" className="input-field" placeholder="Alice Nguyen" value={formData.studentName} onChange={(e) => setFormData({...formData, studentName: e.target.value})} />
+                            </div>
+                            
+                            <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px'}}>
+                                <div className="input-group">
+                                    <label className="input-label">Issuer</label>
+                                    <input type="text" className="input-field" value={formData.issuerName} onChange={(e) => setFormData({...formData, issuerName: e.target.value})} />
+                                </div>
+                                <div className="input-group">
+                                    <label className="input-label">Program</label>
+                                    <input type="text" className="input-field" value={formData.programName} onChange={(e) => setFormData({...formData, programName: e.target.value})} />
+                                </div>
+                            </div>
+                             <div className="input-group">
+                                <label className="input-label">Issued At</label>
+                                <input type="date" className="input-field" value={formData.issuedAt} onChange={(e) => setFormData({...formData, issuedAt: e.target.value})} />
+                            </div>
+                        </div>
+                    )}
+                    
+                    <button className="create-btn" onClick={handleMintRequest} disabled={!account || !selectedFile} style={{marginTop: '20px'}}>
+                      Mint {nftType.toUpperCase()}
                     </button>
                     
                     {status && <div className="status-alert">{status}</div>}
@@ -336,76 +376,32 @@ function App() {
             </section>
           )}
 
-          {/* TAB 2: PORTFOLIO SECTION */}
+        
           {activeTab === 'portfolio' && (
             <section className="portfolio-section">
               <div className="section-header">
-                <h1 className="page-title">My Certificates</h1>
+                <h1 className="page-title">My Collection</h1>
                 <p className="page-subtitle">Manage your blockchain assets</p>
               </div>
-              {loading ? (
-                <div className="loading-state">
-                  <div className="spinner-ring"></div>
-                  <p>Loading from Blockchain...</p>
-                </div>
-              ) : myNFTs.length === 0 ? (
-                <div className="empty-portfolio">
-                  <div className="upload-icon" style={{fontSize: '3rem', opacity: 0.5}}>📭</div>
-                  <h3>No certificates found</h3>
-                  <p>You haven't earned any certificates yet.</p>
-                  <button className="create-btn" style={{maxWidth: '200px', margin: '20px auto'}} onClick={() => setActiveTab('mint')}>
-                    Create First NFT
-                  </button>
-                </div>
+              {loading ? <div className="loading-state">Loading...</div> : myNFTs.length === 0 ? (
+                <div className="empty-portfolio"><h3>No items found</h3></div>
               ) : (
                 <div className="certificates-grid">
                   {myNFTs.map((nft, index) => (
-                    // Sử dụng index làm fallback key nếu tokenId bị lỗi
                     <div key={nft.tokenId || index} className="certificate-card">
                       <div className="card-media">
-                        {nft.image ? (
-                           <img 
-                             src={nft.image} 
-                             alt={nft.name} 
-                             className="certificate-image"
-                             // Thêm xử lý khi ảnh lỗi -> Hiện ảnh mặc định
-                             onError={(e) => {
-                               e.target.onerror = null; 
-                               e.target.src = "https://via.placeholder.com/400x300?text=No+Image";
-                             }}
-                           />
-                        ) : (
-                           // Placeholder nếu không có link ảnh
-                           <div style={{width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#e2e8f0', color: '#64748b'}}>
-                              No Image
-                           </div>
-                        )}
-                        <div className="card-overlay">
-                          <span className="token-id">#{nft.tokenId}</span>
-                        </div>
+                        <img src={nft.image} alt="NFT" className="certificate-image" onError={(e)=>{e.target.src="https://via.placeholder.com/300?text=No+Image"}} />
+                        <div className="card-overlay"><span className="token-id">#{nft.tokenId}</span></div>
                       </div>
-                      
                       <div className="card-body">
-                        <h3 className="certificate-name">{nft.name || "Unnamed Certificate"}</h3>
-                        <p className="certificate-description">
-                           {nft.description ? (nft.description.length > 50 ? nft.description.substring(0,50)+"..." : nft.description) : "No description provided."}
-                        </p>
-                        
+                        <div style={{display:'flex', justifyContent:'space-between'}}>
+                             <h3 className="certificate-name">{nft.name}</h3>
+                             <span style={{background: '#6366f1', color:'white', padding:'2px 8px', borderRadius:'12px', fontSize:'0.7rem', height:'fit-content'}}>{nft.typeLabel}</span>
+                        </div>
+                        <p className="certificate-description">{nft.extraInfo || nft.description.substring(0,40)}</p>
                         <div className="card-actions">
-                          <button 
-                            className="action-button secondary" 
-                            onClick={() => handleTransfer(nft.tokenId)}
-                            title="Transfer ownership"
-                          >
-                            Transfer
-                          </button>
-                          <button 
-                            className="action-button danger" 
-                            onClick={() => handleRevoke(nft.tokenId)}
-                            title="Burn/Delete NFT"
-                          >
-                            Revoke
-                          </button>
+                          <button className="action-button secondary" onClick={() => handleTransfer(nft.tokenId)}>Transfer</button>
+                          <button className="action-button danger" onClick={() => handleRevoke(nft.tokenId)}>Revoke</button>
                         </div>
                       </div>
                     </div>
@@ -415,57 +411,37 @@ function App() {
             </section>
           )}
 
-          {/* TAB 3: VERIFY SECTION */}
           {activeTab === 'verify' && (
             <section className="create-section">
-              <div className="section-header">
-                <h1 className="page-title">Verify Document</h1>
-                <p className="page-subtitle">Check authenticity on Blockchain</p>
-              </div>
-
+              <div className="section-header"><h1 className="page-title">Verify Document</h1></div>
               <div className="create-container">
-                 <div className="upload-area">
-                  <div className="upload-zone">
-                    <input type="file" id="verify-upload" className="file-input-hidden"
-                      onChange={(e) => setVerifyFile(e.target.files[0])}
-                    />
-                    <label htmlFor="verify-upload" className="upload-label">
-                      {verifyFile ? (
-                        <div className="file-preview">
-                          <div className="file-icon-large">🔍</div>
-                          <div className="file-name">{verifyFile.name}</div>
-                        </div>
-                      ) : (
-                         <div className="upload-placeholder">
-                          <div className="upload-icon">🛡️</div>
-                          <div className="upload-text">Upload original file to check</div>
-                        </div>
-                      )}
-                    </label>
-                  </div>
+                <div className="upload-area">
+                    <div className="upload-zone">
+                        <input type="file" id="verify" className="file-input-hidden" onChange={(e)=>setVerifyFile(e.target.files[0])}/>
+                        <label htmlFor="verify" className="upload-label">{verifyFile ? verifyFile.name : "Upload Original File"}</label>
+                    </div>
                 </div>
-
                 <div className="form-panel">
-                   <button className="create-btn" onClick={handleVerifyRequest} disabled={!verifyFile}>
-                      Verify Integrity
-                   </button>
-                   {status && <div className="status-alert" style={{marginTop: 10}}>{status}</div>}
-                   
-                   {verifyResult && (
+                    <button className="create-btn" onClick={handleVerifyRequest} disabled={!verifyFile}>Verify Integrity</button>
+                    {status && <div className="status-alert">{status}</div>}
+                    
+                    {verifyResult && (
                       <div className={`verify-result ${verifyResult.verified ? 'valid' : 'invalid'}`}>
-                        <h3>{verifyResult.verified ? "VALID DOCUMENT" : " INVALID DOCUMENT"}</h3>
+                        <h3>{verifyResult.verified ? "VALID DOCUMENT" : "INVALID DOCUMENT"}</h3>
                         {verifyResult.verified && (
-                          <div className="verify-details">
-                            <p><strong>Token ID:</strong> #{verifyResult.tokenId}</p>
-                            <p><strong>Owner:</strong> {verifyResult.currentOwner}</p>
-                            <p className="ownership-tag">
-                              {verifyResult.isYourCert ? " You own this!" : " You do NOT own this."}
-                            </p>
+                          <div className="verify-details" style={{textAlign:'left'}}>
+                            <p><strong>Name:</strong> {verifyResult.metadata?.name}</p>
+                            <p><strong>Type:</strong> {verifyResult.details?.type}</p>
+                            
+                            {verifyResult.details?.typeCode === 1 && <p style={{color:'blue'}}><strong>Co-Owner:</strong> {verifyResult.details.coOwner}</p>}
+                            {verifyResult.details?.typeCode === 2 && <p style={{color:'orange'}}><strong>Value:</strong> ${verifyResult.details.value} ({verifyResult.details.isRedeemed ? 'USED' : 'ACTIVE'})</p>}
+                            
+                            <hr/>
+                            <p className="ownership-tag">{verifyResult.isYourCert ? "You own this!" : "You do NOT own this."}</p>
                           </div>
                         )}
-                        {!verifyResult.verified && <p>This document does not exist on our system.</p>}
                       </div>
-                   )}
+                    )}
                 </div>
               </div>
             </section>

@@ -21,7 +21,9 @@ const wallet = new ethers.Wallet(process.env.PRIVATE_KEY, provider);
 const contractABI = [
     "function mintCertificate(address to, string memory uri, string memory dataHashBytes) public",
     "function hashToTokenId(bytes32 hash) view returns (uint256)",
-    "function ownerOf(uint256 tokenId) view returns (address)"
+    "function ownerOf(uint256 tokenId) view returns (address)",
+    "function mintExtended(address to, string memory uri, string memory dataHashBytes, uint8 _type, address _coOwner, uint256 _value) public",
+    "function redeemVoucher(uint256 tokenId) public",
 ];
 const contractAddress = process.env.CONTRACT_ADDRESS;
 const contract = new ethers.Contract(contractAddress, contractABI, wallet);
@@ -30,101 +32,125 @@ const readContract = new ethers.Contract(contractAddress, contractABI, provider)
 // Cấu hình Pinata
 const pinata = new pinataSDK(process.env.PINATA_API_KEY, process.env.PINATA_SECRET_KEY);
 
-// --- API MINT (Đã sửa lỗi tokenURI) ---
+// --- API MINT ---
 app.post('/api/mint', upload.single('certificateFile'), async (req, res) => {
     try {
         const { 
-            userAddress, studentName, certName, description, 
-            issuerName, programName, issuedAt, expiryDate, externalUrl 
+            userAddress, // Người nhận (Primary Owner)
+            type,        // 'standard', 'joint', 'voucher'
+            
+            // Các trường dữ liệu chung & riêng
+            studentName, // Dùng làm tên chính cho Certificate
+            certName,    // Tên hiển thị (Title)
+            description,
+            issuerName,
+            
+            // Riêng cho Joint
+            coOwner,     // Địa chỉ ví người thứ 2
+            
+            // Riêng cho Voucher
+            voucherValue // Giá trị tiền
         } = req.body;
 
         const file = req.file;
-        if (!file) return res.status(400).json({ success: false, error: "Thiếu file ảnh/PDF" });
+        if (!file) return res.status(400).json({ error: "Thiếu file" });
 
-        console.log(`🔄 Đang xử lý Mint cho: ${studentName}`);
+        console.log(`Đang xử lý Mint loại: [${type.toUpperCase()}]`);
 
-        // --- BƯỚC 0: TÍNH HASH & KIỂM TRA TRƯỚC (PRE-CHECK) ---
-        // Tính hash của file gốc ngay lập tức
+        // --- BƯỚC 0: PRE-CHECK HASH (Giữ nguyên logic bảo mật cũ) ---
         const fileHash = crypto.createHash('sha256').update(file.buffer).digest('hex');
-        
-        // Chuyển sang format Hash của Solidity (Keccak256 của chuỗi hex string)
-        // Vì trong contract: hash = keccak256(abi.encodePacked(dataHashString))
         const solidityHash = ethers.keccak256(ethers.toUtf8Bytes(fileHash));
-
-        console.log("Pre-check Hash:", fileHash);
         
-        // Hỏi Contract xem hash này đã có TokenID chưa
         const existingTokenIdBigInt = await readContract.hashToTokenId(solidityHash);
-        const existingTokenId = existingTokenIdBigInt.toString();
-
-        // NẾU ĐÃ TỒN TẠI -> DỪNG NGAY LẬP TỨC
-        if (existingTokenId !== "0") {
-            console.warn(`⚠️ TỪ CHỐI: File này đã được mint cho Token ID #${existingTokenId}`);
-            return res.status(400).json({ 
-                success: false, 
-                error: `Dữ liệu này đã được cấp Certificate (Token ID #${existingTokenId}). Không thể mint lại.` 
-            });
+        if (existingTokenIdBigInt.toString() !== "0") {
+             return res.status(400).json({ success: false, error: "File này đã tồn tại trên hệ thống!" });
         }
 
-        console.log("Pre-check OK: Dữ liệu chưa tồn tại. Tiến hành upload IPFS...");
-
-        // --- BƯỚC 1: UPLOAD ẢNH LÊN PINATA ---
+        // --- BƯỚC 1: UPLOAD ẢNH (Giữ nguyên) ---
         const fileStream = require('stream').Readable.from(file.buffer);
-        const fileOptions = { pinataMetadata: { name: `IMG-${studentName}-${Date.now()}` } };
-        
-        const fileRes = await pinata.pinFileToIPFS(fileStream, fileOptions);
+        const fileRes = await pinata.pinFileToIPFS(fileStream, { pinataMetadata: { name: `IMG-${Date.now()}` } });
         const imageURI = `ipfs://${fileRes.IpfsHash}`;
-        const fileCID = fileRes.IpfsHash;
-        console.log("Ảnh đã upload:", imageURI);
 
-        // --- BƯỚC 2: TẠO METADATA JSON ---
-        const formattedHash = `0x${fileHash}`; // Hash lưu vào Contract (string)
+        // --- BƯỚC 2: CẤU TRÚC METADATA ĐỘNG (PHẦN QUAN TRỌNG NHẤT) ---
         
-        const metadata = {
-            name: `${certName} - ${studentName}`,
-            description: description || `Certified by ${issuerName}`,
-            image: imageURI,
-            external_url: externalUrl || "",
-            attributes: [
-                { trait_type: "Student Name", value: studentName },
+        let metadataName = "";
+        let attributes = [];
+        
+        // >>> LOGIC TẠO ATTRIBUTES THEO TỪNG LOẠI <<<
+        
+        if (type === 'voucher') {
+            // --- LOGIC VOUCHER ---
+            metadataName = `${certName} - $${voucherValue}`; // VD: Gift Card - $50
+            attributes = [
+                { trait_type: "Type", value: "Voucher" },
                 { trait_type: "Issuer", value: issuerName },
-                { trait_type: "Program", value: programName },
-                { trait_type: "Issued Date", value: issuedAt },
-                { trait_type: "Expiry Date", value: expiryDate || "Permanent" }
-            ],
-            certificate_hash: formattedHash,
-            file_cid: fileCID,
-            issuer_address: wallet.address
+                // display_type: "number" giúp hiện thanh chỉ số trên OpenSea
+                { trait_type: "Value", value: parseInt(voucherValue), display_type: "number" },
+                { trait_type: "Currency", value: "USD" },
+                { trait_type: "Redeemable", value: "Yes" }
+            ];
+
+        } else if (type === 'joint') {
+            // --- LOGIC JOINT CONTRACT ---
+            metadataName = `${certName} (Joint Contract)`;
+            attributes = [
+                { trait_type: "Type", value: "Joint Ownership" },
+                { trait_type: "Primary Owner", value: userAddress }, // Ví người A
+                { trait_type: "Co-Owner", value: coOwner || "Pending" }, // Ví người B
+                { trait_type: "Signed Date", value: new Date().toISOString().split('T')[0], display_type: "date" }
+            ];
+
+        } else {
+            // --- LOGIC STANDARD CERTIFICATE (Mặc định) ---
+            metadataName = `${certName} - ${studentName}`;
+            attributes = [
+                { trait_type: "Type", value: "Certificate" },
+                { trait_type: "Student Name", value: studentName },
+                { trait_type: "Program", value: "Blockchain Dev" }, // Hoặc lấy từ req.body.programName
+                { trait_type: "Issuer", value: issuerName },
+                { trait_type: "Issued Date", value: new Date().toISOString().split('T')[0], display_type: "date" }
+            ];
+        }
+
+        // Tạo JSON cuối cùng
+        const metadata = {
+            name: metadataName,
+            description: description || `Verifiable item issued by ${issuerName}`,
+            image: imageURI,
+            external_url: "https://your-project.vercel.app",
+            attributes: attributes,
+            certificate_hash: `0x${fileHash}`,
+            file_cid: fileRes.IpfsHash,
+            created_type: type
         };
 
-        // --- BƯỚC 3: UPLOAD METADATA JSON ---
-        const jsonOptions = { pinataMetadata: { name: `META-${studentName}-${Date.now()}` } };
-        const jsonRes = await pinata.pinJSONToIPFS(metadata, jsonOptions);
+        // --- BƯỚC 3: UPLOAD METADATA ---
+        const jsonRes = await pinata.pinJSONToIPFS(metadata, { pinataMetadata: { name: `META-${Date.now()}` } });
         const tokenURI = `ipfs://${jsonRes.IpfsHash}`;
-        console.log("Metadata URI:", tokenURI);
 
-        // --- BƯỚC 4: MINT NFT ---
-        console.log("⏳ Đang gửi giao dịch...");
+        // --- BƯỚC 4: MINT TRÊN SMART CONTRACT ---
+        let typeInt = 0; // Standard
+        if (type === 'joint') typeInt = 1;
+        if (type === 'voucher') typeInt = 2;
+
+        console.log(`Minting on-chain: Type ${typeInt}, CoOwner: ${coOwner}, Value: ${voucherValue}`);
+
+        const tx = await contract.mintExtended(
+            userAddress,
+            tokenURI,
+            fileHash,
+            typeInt, 
+            coOwner || ethers.ZeroAddress,
+            voucherValue || 0              
+        );
         
-        // Truyền fileHash (string) vào contract
-        const tx = await contract.mintCertificate(userAddress, tokenURI, fileHash);
         await tx.wait();
+        console.log("Mint thành công:", tx.hash);
 
-        console.log("Mint thành công!");
-
-        res.json({
-            success: true,
-            txHash: tx.hash,
-            tokenURI: tokenURI,
-            metadata: metadata
-        });
+        res.json({ success: true, txHash: tx.hash, tokenURI, metadata });
 
     } catch (error) {
         console.error("Lỗi Mint:", error);
-        // Xử lý lỗi revert từ contract (phòng hờ trường hợp race condition)
-        if (error.code === 'CALL_EXCEPTION' || error.message.includes("Du lieu nay da duoc cap")) {
-             return res.status(400).json({ success: false, error: "Dữ liệu này đã được cấp Certificate rồi!" });
-        }
         res.status(500).json({ success: false, error: error.message });
     }
 });
@@ -133,40 +159,61 @@ app.post('/api/verify', upload.single('verifyFile'), async (req, res) => {
     try {
         const file = req.file;
         const { claimerAddress } = req.body;
-
+        
         if (!file) return res.status(400).json({ message: "Thiếu file verify" });
 
-        // 1. Tính lại Hash file (Logic giống hệt lúc Mint)
         const fileHash = crypto.createHash('sha256').update(file.buffer).digest('hex');
-        
-        // 2. Chuyển sang format Hash của Solidity
         const solidityHash = ethers.keccak256(ethers.toUtf8Bytes(fileHash));
 
-        // 3. Hỏi Contract
         const tokenIdBigInt = await readContract.hashToTokenId(solidityHash);
         const tokenId = tokenIdBigInt.toString();
 
         if (tokenId === "0") {
-            return res.json({ verified: false, message: "Không tìm thấy tài liệu này trên chuỗi." });
+            return res.json({ verified: false, message: "Tài liệu này KHÔNG tồn tại trên Blockchain." });
         }
 
         const currentOwner = await readContract.ownerOf(tokenId);
+        const details = await readContract.tokenDetails(tokenId);
+        const typeCode = Number(details[0]); // 0, 1, 2
+        
+        const typeLabel = ["Standard Certificate", "Joint Contract", "Voucher"][typeCode];
+
+        const extraData = {
+            type: typeLabel,
+            typeCode: typeCode,
+            coOwner: details[1],
+            value: details[2].toString(),
+            isRedeemed: details[3]
+        };
+
+        // 5. Lấy Metadata từ IPFS
+        const tokenURI = await readContract.tokenURI(tokenId);
+        const httpURI = tokenURI.replace("ipfs://", "https://cloudflare-ipfs.com/ipfs/");
+        
+        let metaData = {};
+        try {
+            const metaRes = await axios.get(httpURI);
+            metaData = metaRes.data;
+        } catch (e) { console.log("Lỗi fetch IPFS:", e.message); }
+
         const isOwner = claimerAddress && (currentOwner.toLowerCase() === claimerAddress.toLowerCase());
 
         res.json({
             verified: true,
             tokenId,
             currentOwner,
-            isYourCert: isOwner
+            isYourCert: isOwner,
+            details: extraData,
+            metadata: metaData
         });
 
     } catch (error) {
-        console.error("❌ Lỗi Verify:", error);
+        console.error("Lỗi Verify:", error);
         res.status(500).json({ message: error.message });
     }
 });
 
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
-    console.log(`🚀 Server Backend chạy tại http://localhost:${PORT}`);
+    console.log(`Server Backend chạy tại localhost:${PORT}`);
 });
