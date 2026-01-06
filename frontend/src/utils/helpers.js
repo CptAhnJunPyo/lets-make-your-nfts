@@ -2,13 +2,11 @@ import { ethers } from 'ethers';
 import axios from 'axios';
 import { CONTRACT_ADDRESS, contractABI, API_BASE_URL } from './constants';
 
-// Chuyển đổi IPFS URI sang HTTP URL
 export const ipfsToHttp = (uri) => {
   if (!uri) return "";
   return uri.replace("ipfs://", "https://cloudflare-ipfs.com/ipfs/");
 };
 
-// Kết nối ví
 export const connectWallet = async () => {
   if (!window.ethereum) {
     throw new Error("Vui lòng cài đặt Metamask!");
@@ -22,7 +20,6 @@ export const connectWallet = async () => {
   return { provider, signer, address };
 };
 
-// Lấy danh sách NFT của user
 export const fetchUserNFTs = async (userAddress, signer) => {
   const contract = new ethers.Contract(CONTRACT_ADDRESS, contractABI, signer);
   const balanceBigInt = await contract.balanceOf(userAddress);
@@ -77,7 +74,6 @@ export const fetchUserNFTs = async (userAddress, signer) => {
   return items;
 };
 
-// Mint NFT mới
 export const mintNFT = async (account, nftType, selectedFile, formData) => {
   if (!account) throw new Error("Chưa kết nối ví!");
   if (!selectedFile) throw new Error("Vui lòng chọn file ảnh/PDF!");
@@ -111,7 +107,6 @@ export const mintNFT = async (account, nftType, selectedFile, formData) => {
   return response.data;
 };
 
-// Transfer NFT
 export const transferNFT = async (tokenId, toAddress) => {
   if (!toAddress || !ethers.isAddress(toAddress)) {
     throw new Error("Địa chỉ không hợp lệ");
@@ -128,7 +123,6 @@ export const transferNFT = async (tokenId, toAddress) => {
   return tx.hash;
 };
 
-// Revoke (Burn) NFT
 export const revokeNFT = async (tokenId) => {
   const provider = new ethers.BrowserProvider(window.ethereum);
   const signer = await provider.getSigner();
@@ -140,7 +134,6 @@ export const revokeNFT = async (tokenId) => {
   return tx.hash;
 };
 
-// Verify document
 export const verifyDocument = async (verifyFile, account) => {
   if (!verifyFile) throw new Error("Vui lòng chọn file gốc để kiểm tra!");
 
