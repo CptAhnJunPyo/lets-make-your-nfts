@@ -156,7 +156,7 @@ function App() {
     if (nftType === 'voucher') form.append('voucherValue', formData.voucherValue);
 
     try {
-      const response = await axios.post('http://localhost:3001/api/mint', form, {
+      const response = await axios.post('https://lets-make-your-nfts.onrender.com/api/mint', form, {
         headers: { 'Content-Type': 'multipart/form-data' }
       });
 
@@ -224,7 +224,7 @@ function App() {
     form.append('claimerAddress', account || "");
 
     try {
-      const response = await axios.post('http://localhost:3001/api/verify', form, {
+      const response = await axios.post('https://lets-make-your-nfts.onrender.com/api/verify', form, {
         headers: { 'Content-Type': 'multipart/form-data' }
       });
       setVerifyResult(response.data);
@@ -370,7 +370,6 @@ function App() {
                     <div 
                         key={nft.tokenId || index} 
                         className="certificate-card"
-                        // THÊM SỰ KIỆN CLICK VÀO CARD
                         onClick={() => setSelectedNft(nft)}
                         style={{cursor: 'pointer'}} 
                     >
@@ -388,7 +387,6 @@ function App() {
                         <p className="certificate-description">{nft.extraInfo || nft.description?.substring(0,40)}...</p>
                         
                         <div className="card-actions">
-                          {/* Dùng stopPropagation để không kích hoạt mở Modal khi bấm nút */}
                           <button className="action-button secondary" onClick={(e) => { e.stopPropagation(); handleTransfer(nft.tokenId); }}>Transfer</button>
                           <button className="action-button danger" onClick={(e) => { e.stopPropagation(); handleRevoke(nft.tokenId); }}>Revoke</button>
                         </div>
@@ -463,7 +461,6 @@ function App() {
                             <p>{selectedNft.description || "No description provided."}</p>
                         </div>
 
-                        {/* Thông tin động dựa theo loại */}
                         <div className="modal-attributes">
                             {selectedNft.typeLabel === 'Joint Contract' && (
                                 <div className="attr-item highlight-blue">
@@ -479,11 +476,10 @@ function App() {
                                 </div>
                             )}
 
-                            {/* Thông tin thêm (nếu cần) */}
                             <div className="attr-grid">
                                 <div className="attr-item">
                                     <label>Chain</label>
-                                    <p>Arbitrum Sepolia</p>
+                                    <p>Sepolia</p>
                                 </div>
                                 <div className="attr-item">
                                     <label>Standard</label>
@@ -494,10 +490,10 @@ function App() {
 
                         <div className="modal-actions">
                              <button className="modal-action-btn" onClick={() => { alert("Chức năng Share đang phát triển!"); }}>
-                                🔗 Share Link
+                                 Share Link
                              </button>
                              <button className="modal-action-btn primary" onClick={() => window.open(selectedNft.image, '_blank')}>
-                                🔍 View Original
+                                 View Original
                              </button>
                         </div>
                     </div>
