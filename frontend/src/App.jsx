@@ -2,11 +2,13 @@ import { useState, useEffect } from 'react';
 import { ethers } from 'ethers';
 import './styles/theme.css';
 import './styles/global.css';
+import './components/Layout/TutorialOverlay.css';
 import Navbar from './components/Layout/Navbar';
 import MintSection from './components/Mint/MintSection';
 import PortfolioSection from './components/Portfolio/PortfolioSection';
 import VerifySection from './components/Verify/VerifySection';
 import NFTModal from './components/Portfolio/NFTModal';
+import TutorialOverlay from './components/Layout/TutorialOverlay';
 import { 
   connectWallet as connectWalletHelper, 
   fetchUserNFTs as fetchUserNFTsHelper,
@@ -24,6 +26,7 @@ function App() {
   const [selectedNft, setSelectedNft] = useState(null);
   const [activeTab, setActiveTab] = useState('mint');
   const [darkMode, setDarkMode] = useState(false);
+  const [showTutorial, setShowTutorial] = useState(false);
 
   const [nftType, setNftType] = useState('standard'); 
   const [selectedFile, setSelectedFile] = useState(null);
@@ -49,6 +52,12 @@ function App() {
       setDarkMode(savedTheme === 'dark');
     } else {
       setDarkMode(window.matchMedia('(prefers-color-scheme: dark)').matches);
+    }
+
+    // Check if user is first time visitor
+    const hasSeenTutorial = localStorage.getItem('hasSeenTutorial');
+    if (!hasSeenTutorial) {
+      setShowTutorial(true);
     }
   }, []);
 
@@ -145,6 +154,15 @@ function App() {
       setStatus("Lỗi khi xác thực: " + error.message);
     }
   };
+
+  const handleTutorialComplete = () => {
+    setShowTutorial(false);
+    localStorage.setItem('hasSeenTutorial', 'true');
+  };
+
+  const handleStartTutorial = () => {
+    setShowTutorial(true);
+  };
   
   const closeNftModal = () => setSelectedNft(null);
 
@@ -198,6 +216,17 @@ function App() {
       </main>
 
       <NFTModal nft={selectedNft} onClose={closeNftModal} />
+
+      <TutorialOverlay 
+        isVisible={showTutorial} 
+        onComplete={handleTutorialComplete} 
+      />
+
+      {!showTutorial && (
+        <button className="welcome-tutorial-btn" onClick={handleStartTutorial}>
+          📖 Help Tour
+        </button>
+      )}
     </div>
   );
 }

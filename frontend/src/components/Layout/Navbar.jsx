@@ -14,18 +14,21 @@ function Navbar({ account, connectWallet, activeTab, setActiveTab, darkMode, tog
           <button 
             className={`nav-link ${activeTab === 'mint' ? 'active' : ''}`} 
             onClick={() => setActiveTab('mint')}
+            data-tab="mint"
           >
             Create
           </button>
           <button 
             className={`nav-link ${activeTab === 'portfolio' ? 'active' : ''}`} 
             onClick={() => setActiveTab('portfolio')}
+            data-tab="portfolio"
           >
             Portfolio
           </button>
           <button 
             className={`nav-link ${activeTab === 'verify' ? 'active' : ''}`} 
             onClick={() => setActiveTab('verify')}
+            data-tab="verify"
           >
             Verify
           </button>
