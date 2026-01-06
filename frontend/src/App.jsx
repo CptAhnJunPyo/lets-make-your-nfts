@@ -12,19 +12,17 @@ const contractABI = [
   "function burn(uint256 tokenId)",
   "function tokenDetails(uint256 tokenId) view returns (uint8 tType, address coOwner, uint256 value, bool isRedeemed)"
 ];
+
 function App() {
-  // --- STATE QUẢN LÝ ---
   const [account, setAccount] = useState(null);
   const [myNFTs, setMyNFTs] = useState([]);
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState('');
-  
-  // UI State
-  const [activeTab, setActiveTab] = useState('mint'); // 'mint' | 'portfolio' | 'verify'
+  const [selectedNft, setSelectedNft] = useState(null);
+  const [activeTab, setActiveTab] = useState('mint');
   const [darkMode, setDarkMode] = useState(false);
 
-  // --- STATE CHO FORM MINT (NÂNG CẤP) ---
-  const [nftType, setNftType] = useState('standard'); // 'standard', 'joint', 'voucher'
+  const [nftType, setNftType] = useState('standard'); 
   const [selectedFile, setSelectedFile] = useState(null);
   
   const [formData, setFormData] = useState({ 
@@ -35,17 +33,13 @@ function App() {
       description: '',
       issuedAt: new Date().toISOString().split('T')[0],
       externalUrl: '',
-      // Field riêng cho Joint
       coOwner: '',
-      // Field riêng cho Voucher
       voucherValue: ''
   });
 
-  // Verify Form State
   const [verifyFile, setVerifyFile] = useState(null);
   const [verifyResult, setVerifyResult] = useState(null);
-
-  // --- EFFECT: THEME ---
+  
   useEffect(() => {
     const savedTheme = localStorage.getItem('theme');
     if (savedTheme) {
@@ -61,7 +55,6 @@ function App() {
     localStorage.setItem('theme', newTheme ? 'dark' : 'light');
   };
 
-  // --- 1. KẾT NỐI VÍ ---
   const connectWallet = async () => {
     if (window.ethereum) {
       try {
@@ -80,7 +73,6 @@ function App() {
     }
   };
 
-  // --- 2. LẤY DANH SÁCH NFT (CÓ PHÂN LOẠI) ---
   const fetchUserNFTs = async (userAddress, signer) => {
     setLoading(true);
     setMyNFTs([]);
@@ -95,7 +87,6 @@ function App() {
         try {
           const tokenId = await contract.tokenOfOwnerByIndex(userAddress, i);
           
-          // Lấy Metadata IPFS
           const tokenURI = await contract.tokenURI(tokenId);
           const httpURI = tokenURI.replace("ipfs://", "https://cloudflare-ipfs.com/ipfs/");
           
@@ -105,12 +96,10 @@ function App() {
              meta = metaRes.data;
           } catch(e) { console.warn("Lỗi fetch meta IPFS", e); }
 
-          // Lấy thông tin mở rộng từ Blockchain (Type, Value, ...)
           let typeLabel = "Standard";
           let extraInfo = "";
           try {
              const details = await contract.tokenDetails(tokenId);
-             // details = [tType (0,1,2), coOwner, value, isRedeemed]
              const typeCode = Number(details[0]);
              
              if (typeCode === 1) {
@@ -141,12 +130,10 @@ function App() {
     setLoading(false);
   };
 
-  // --- 3. MINT REQUEST (XỬ LÝ FORM ĐỘNG) ---
   const handleMintRequest = async () => {
     if (!account) return alert("Chưa kết nối ví!");
     if (!selectedFile) return alert("Vui lòng chọn file ảnh/PDF!");
     
-    // Validate dữ liệu riêng
     if (nftType === 'joint' && !ethers.isAddress(formData.coOwner)) return alert("Địa chỉ Co-Owner không hợp lệ!");
     if (nftType === 'voucher' && !formData.voucherValue) return alert("Vui lòng nhập giá trị Voucher!");
 
@@ -154,9 +141,8 @@ function App() {
     
     const form = new FormData();
     form.append('userAddress', account);
-    form.append('type', nftType); // Gửi loại NFT để Backend biết đường xử lý
+    form.append('type', nftType); 
 
-    // Append các trường chung
     form.append('studentName', formData.studentName);
     form.append('certName', formData.certName);
     form.append('issuerName', formData.issuerName);
@@ -166,19 +152,16 @@ function App() {
     form.append('externalUrl', formData.externalUrl);
     form.append('certificateFile', selectedFile);
 
-    // Append trường riêng biệt
     if (nftType === 'joint') form.append('coOwner', formData.coOwner);
     if (nftType === 'voucher') form.append('voucherValue', formData.voucherValue);
 
     try {
-      // Gọi API Backend (Nhớ cập nhật URL nếu đã deploy lên Render)
-      const response = await axios.post('https://lets-make-your-nfts.onrender.com/api/mint', form, {
+      const response = await axios.post('http://localhost:3001/api/mint', form, {
         headers: { 'Content-Type': 'multipart/form-data' }
       });
 
       if (response.data.success) {
         setStatus(`Thành công! Tx Hash: ${response.data.txHash.slice(0, 10)}...`);
-        // Reset form nhẹ nhàng
         setSelectedFile(null);
         fetchUserNFTs(account, new ethers.BrowserProvider(window.ethereum).getSigner());
       }
@@ -189,7 +172,6 @@ function App() {
     }
   };
 
-  // --- 4. TRANSFER ---
   const handleTransfer = async (tokenId) => {
     const toAddress = prompt("Nhập địa chỉ ví người nhận:");
     if (!toAddress || !ethers.isAddress(toAddress)) return alert("Địa chỉ không hợp lệ");
@@ -212,7 +194,6 @@ function App() {
     }
   };
 
-  // --- 5. REVOKE (BURN) ---
   const handleRevoke = async (tokenId) => {
     if (!confirm("Bạn có chắc chắn muốn hủy vĩnh viễn NFT này không?")) return;
 
@@ -233,7 +214,6 @@ function App() {
     }
   };
 
-  // --- 6. VERIFY ---
   const handleVerifyRequest = async () => {
     if (!verifyFile) return alert("Vui lòng chọn file gốc để kiểm tra!");
     setStatus(" Đang xác thực trên Blockchain...");
@@ -244,7 +224,7 @@ function App() {
     form.append('claimerAddress', account || "");
 
     try {
-      const response = await axios.post('https://lets-make-your-nfts.onrender.com/api/verify', form, {
+      const response = await axios.post('http://localhost:3001/api/verify', form, {
         headers: { 'Content-Type': 'multipart/form-data' }
       });
       setVerifyResult(response.data);
@@ -254,12 +234,11 @@ function App() {
       setStatus("Lỗi khi xác thực.");
     }
   };
+  const closeNftModal = () => setSelectedNft(null);
 
-  // --- RENDER GIAO DIỆN ---
   return (
     <div className={`app ${darkMode ? 'dark' : 'light'}`}>
       
-      {/* HEADER */}
       <header className="navbar">
         <div className="nav-container">
           <div className="nav-left">
@@ -376,18 +355,25 @@ function App() {
           )}
 
         
-          {activeTab === 'portfolio' && (
+{activeTab === 'portfolio' && (
             <section className="portfolio-section">
               <div className="section-header">
                 <h1 className="page-title">My Collection</h1>
                 <p className="page-subtitle">Manage your blockchain assets</p>
               </div>
+              
               {loading ? <div className="loading-state">Loading...</div> : myNFTs.length === 0 ? (
                 <div className="empty-portfolio"><h3>No items found</h3></div>
               ) : (
                 <div className="certificates-grid">
                   {myNFTs.map((nft, index) => (
-                    <div key={nft.tokenId || index} className="certificate-card">
+                    <div 
+                        key={nft.tokenId || index} 
+                        className="certificate-card"
+                        // THÊM SỰ KIỆN CLICK VÀO CARD
+                        onClick={() => setSelectedNft(nft)}
+                        style={{cursor: 'pointer'}} 
+                    >
                       <div className="card-media">
                         <img src={nft.image} alt="NFT" className="certificate-image" onError={(e)=>{e.target.src="https://via.placeholder.com/300?text=No+Image"}} />
                         <div className="card-overlay"><span className="token-id">#{nft.tokenId}</span></div>
@@ -395,12 +381,16 @@ function App() {
                       <div className="card-body">
                         <div style={{display:'flex', justifyContent:'space-between'}}>
                              <h3 className="certificate-name">{nft.name}</h3>
-                             <span style={{background: '#6366f1', color:'white', padding:'2px 8px', borderRadius:'12px', fontSize:'0.7rem', height:'fit-content'}}>{nft.typeLabel}</span>
+                             <span className={`badge-type ${nft.typeLabel === 'Voucher' ? 'badge-voucher' : nft.typeLabel === 'Joint Contract' ? 'badge-joint' : 'badge-std'}`}>
+                                {nft.typeLabel}
+                             </span>
                         </div>
-                        <p className="certificate-description">{nft.extraInfo || nft.description.substring(0,40)}</p>
+                        <p className="certificate-description">{nft.extraInfo || nft.description?.substring(0,40)}...</p>
+                        
                         <div className="card-actions">
-                          <button className="action-button secondary" onClick={() => handleTransfer(nft.tokenId)}>Transfer</button>
-                          <button className="action-button danger" onClick={() => handleRevoke(nft.tokenId)}>Revoke</button>
+                          {/* Dùng stopPropagation để không kích hoạt mở Modal khi bấm nút */}
+                          <button className="action-button secondary" onClick={(e) => { e.stopPropagation(); handleTransfer(nft.tokenId); }}>Transfer</button>
+                          <button className="action-button danger" onClick={(e) => { e.stopPropagation(); handleRevoke(nft.tokenId); }}>Revoke</button>
                         </div>
                       </div>
                     </div>
@@ -448,6 +438,73 @@ function App() {
 
         </div>
       </main>
+      {selectedNft && (
+        <div className="modal-backdrop" onClick={closeNftModal}>
+            <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+                <button className="modal-close-btn" onClick={closeNftModal}>&times;</button>
+                
+                <div className="modal-grid">
+                    {/* Cột Trái: Ảnh Full Size */}
+                    <div className="modal-image-col">
+                        <img src={selectedNft.image} alt={selectedNft.name} onError={(e)=>{e.target.src="https://via.placeholder.com/600?text=No+Image"}} />
+                    </div>
+
+                    {/* Cột Phải: Metadata Tóm Tắt */}
+                    <div className="modal-info-col">
+                        <div className="modal-header">
+                            <span className="modal-token-id">Token ID #{selectedNft.tokenId}</span>
+                            <span className="modal-type-tag">{selectedNft.typeLabel}</span>
+                        </div>
+                        
+                        <h2 className="modal-title">{selectedNft.name}</h2>
+                        
+                        <div className="modal-description-box">
+                            <label>Description</label>
+                            <p>{selectedNft.description || "No description provided."}</p>
+                        </div>
+
+                        {/* Thông tin động dựa theo loại */}
+                        <div className="modal-attributes">
+                            {selectedNft.typeLabel === 'Joint Contract' && (
+                                <div className="attr-item highlight-blue">
+                                    <label>🤝 Partner / Co-Owner</label>
+                                    <p>{selectedNft.extraInfo?.replace('Partner: ', '') || 'Loading...'}</p>
+                                </div>
+                            )}
+
+                            {selectedNft.typeLabel === 'Voucher' && (
+                                <div className="attr-item highlight-gold">
+                                    <label>💰 Value & Status</label>
+                                    <p>{selectedNft.extraInfo?.replace('Value: ', '') || 'Loading...'}</p>
+                                </div>
+                            )}
+
+                            {/* Thông tin thêm (nếu cần) */}
+                            <div className="attr-grid">
+                                <div className="attr-item">
+                                    <label>Chain</label>
+                                    <p>Arbitrum Sepolia</p>
+                                </div>
+                                <div className="attr-item">
+                                    <label>Standard</label>
+                                    <p>ERC-721</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="modal-actions">
+                             <button className="modal-action-btn" onClick={() => { alert("Chức năng Share đang phát triển!"); }}>
+                                🔗 Share Link
+                             </button>
+                             <button className="modal-action-btn primary" onClick={() => window.open(selectedNft.image, '_blank')}>
+                                🔍 View Original
+                             </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+      )}
     </div>
   );
 }
