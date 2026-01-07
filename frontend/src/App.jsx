@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { Routes, Route } from 'react-router-dom';
 import { ethers } from 'ethers';
 import './styles/theme.css';
 import './styles/global.css';
@@ -9,6 +10,12 @@ import PortfolioSection from './components/Portfolio/PortfolioSection';
 import VerifySection from './components/Verify/VerifySection';
 import NFTModal from './components/Portfolio/NFTModal';
 import TutorialOverlay from './components/Layout/TutorialOverlay';
+
+// Import các trang mới
+import Home from './pages/Home';
+import Dashboard from './pages/Dashboard';
+import History from './pages/History';
+
 import { 
   connectWallet as connectWalletHelper, 
   fetchUserNFTs as fetchUserNFTsHelper,
@@ -177,7 +184,19 @@ function App() {
         toggleTheme={toggleTheme}
       />
 
-      <main className="main-content">
+      <Routes>
+        {/* Trang Home mới */}
+        <Route path="/home" element={<Home account={account} darkMode={darkMode} />} />
+        
+        {/* Trang Dashboard mới */}
+        <Route path="/dashboard" element={<Dashboard account={account} myNFTs={myNFTs} darkMode={darkMode} />} />
+        
+        {/* Trang History mới */}
+        <Route path="/history" element={<History account={account} darkMode={darkMode} />} />
+        
+        {/* Trang chính - GIỮ NGUYÊN LOGIC CŨ */}
+        <Route path="/*" element={
+          <main className="main-content">
         <div className="container">
           {activeTab === 'mint' && (
             <MintSection
@@ -214,6 +233,8 @@ function App() {
           )}
         </div>
       </main>
+        } />
+      </Routes>
 
       <NFTModal nft={selectedNft} onClose={closeNftModal} />
 
