@@ -18,9 +18,16 @@ const tutorialSteps = [
   },
   {
     id: 'navigation',
-    title: '🧭 Navigation Tabs',
-    content: 'Use these tabs to navigate: Create certificates, view your Portfolio, or Verify documents.',
+    title: '🧭 Navigation Menu',
+    content: 'Use this navigation to explore all features: Home, Create, Portfolio, Verify, Dashboard, and History.',
     target: '.nav-center',
+    position: 'bottom'
+  },
+  {
+    id: 'home-page',
+    title: '🏠 Home Page',
+    content: 'Visit the Home page to see an overview of CertiFi features, statistics, and get started quickly.',
+    target: 'a[href="/home"]',
     position: 'bottom'
   },
   {
@@ -42,6 +49,20 @@ const tutorialSteps = [
     title: '🔍 Verify Documents',
     content: 'Upload any file to check if it exists as a verified certificate on blockchain.',
     target: '[data-tab="verify"]',
+    position: 'bottom'
+  },
+  {
+    id: 'dashboard-page',
+    title: '📊 Analytics Dashboard',
+    content: 'View your NFT statistics with beautiful charts showing distribution, monthly activity, and trends.',
+    target: 'a[href="/dashboard"]',
+    position: 'bottom'
+  },
+  {
+    id: 'history-page',
+    title: '📜 Transaction History',
+    content: 'Track all your blockchain transactions including mints, transfers with complete audit trail and Etherscan links.',
+    target: 'a[href="/history"]',
     position: 'bottom'
   },
   {
