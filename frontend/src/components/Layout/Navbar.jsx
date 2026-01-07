@@ -1,37 +1,61 @@
+import { Link, useLocation } from 'react-router-dom';
 import './Navbar.css';
 
 function Navbar({ account, connectWallet, activeTab, setActiveTab, darkMode, toggleTheme }) {
+  const location = useLocation();
+  
   return (
     <header className="navbar">
       <div className="nav-container">
         <div className="nav-left">
-          <div className="logo">
+          <Link to="/" className="logo" style={{ textDecoration: 'none' }}>
             <span className="logo-icon">🎓</span>
             <span className="logo-text">CertiFi</span>
-          </div>
+          </Link>
         </div>
         <nav className="nav-center">
+          <Link 
+            to="/home" 
+            className={`nav-link ${location.pathname === '/home' ? 'active' : ''}`}
+            style={{ textDecoration: 'none' }}
+          >
+            🏠 Home
+          </Link>
           <button 
             className={`nav-link ${activeTab === 'mint' ? 'active' : ''}`} 
             onClick={() => setActiveTab('mint')}
             data-tab="mint"
           >
-            Create
+            ✨ Create
           </button>
           <button 
             className={`nav-link ${activeTab === 'portfolio' ? 'active' : ''}`} 
             onClick={() => setActiveTab('portfolio')}
             data-tab="portfolio"
           >
-            Portfolio
+            💼 Portfolio
           </button>
           <button 
             className={`nav-link ${activeTab === 'verify' ? 'active' : ''}`} 
             onClick={() => setActiveTab('verify')}
             data-tab="verify"
           >
-            Verify
+            ✅ Verify
           </button>
+          <Link 
+            to="/dashboard" 
+            className={`nav-link ${location.pathname === '/dashboard' ? 'active' : ''}`}
+            style={{ textDecoration: 'none' }}
+          >
+            📊 Dashboard
+          </Link>
+          <Link 
+            to="/history" 
+            className={`nav-link ${location.pathname === '/history' ? 'active' : ''}`}
+            style={{ textDecoration: 'none' }}
+          >
+            📜 History
+          </Link>
         </nav>
         <div className="nav-right">
           <button className="theme-toggle" onClick={toggleTheme}>
