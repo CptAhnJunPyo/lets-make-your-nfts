@@ -5,6 +5,7 @@ const { ethers } = require('ethers');
 const pinataSDK = require('@pinata/sdk');
 const multer = require('multer');
 const crypto = require('node:crypto');
+const axios = require('axios');
 
 const app = express();
 app.use(cors());
@@ -21,12 +22,15 @@ const contractABI = [
     "function ownerOf(uint256 tokenId) view returns (address)",
     "function mintExtended(address to, string memory uri, string memory dataHashBytes, uint8 _type, address _coOwner, uint256 _value) public",
     "function redeemVoucher(uint256 tokenId) public",
+    "function tokenDetails(uint256 tokenId) view returns (uint8 tType, address coOwner, uint256 value, bool isRedeemed)",
+    "function tokenURI(uint256 tokenId) view returns (string)",
+    "function getCoOwnedTokens(address user) view returns (uint256[])",
+    "function getCoOwner(uint256 tokenId) public view returns (address)"
 ];
 const contractAddress = process.env.CONTRACT_ADDRESS;
 const contract = new ethers.Contract(contractAddress, contractABI, wallet);
 const readContract = new ethers.Contract(contractAddress, contractABI, provider);
 
-//CẤU HÌNH PINATA
 const pinata = new pinataSDK(process.env.PINATA_API_KEY, process.env.PINATA_SECRET_KEY);
 
 app.post('/api/mint', upload.single('certificateFile'), async (req, res) => {
@@ -123,20 +127,24 @@ app.post('/api/mint', upload.single('certificateFile'), async (req, res) => {
         if (type === 'voucher') typeInt = 2;
 
         console.log(`Minting on-chain: Type ${typeInt}, CoOwner: ${coOwner}, Value: ${voucherValue}`);
-
-        const tx = await contract.mintExtended(
-            userAddress,
-            tokenURI,
-            fileHash,
-            typeInt, 
-            coOwner || ethers.ZeroAddress,
-            voucherValue || 0              
-        );
         
-        await tx.wait();
-        console.log("Mint thành công:", tx.hash);
-
-        res.json({ success: true, txHash: tx.hash, tokenURI, metadata });
+        try {
+            const tx = await contract.mintExtended(
+                userAddress,
+                tokenURI,
+                fileHash,
+                typeInt, 
+                coOwner || ethers.ZeroAddress,
+                voucherValue || 0              
+            );
+            console.log("Giao dịch đã gửi, hash:", tx.hash); 
+        
+            const receipt = await tx.wait(); 
+            console.log("Giao dịch đã được xác nhận trong block:", receipt.blockNumber);
+            res.json({ success: true, txHash: tx.hash, tokenURI, metadata });
+        } catch (error) {
+            console.error("Lỗi xảy ra ngay khi gửi lệnh:", error);
+        }
 
     } catch (error) {
         console.error("Lỗi Mint:", error);
@@ -162,6 +170,7 @@ app.post('/api/verify', upload.single('verifyFile'), async (req, res) => {
         }
 
         const currentOwner = await readContract.ownerOf(tokenId);
+        const coOwner = await readContract.getCoOwner(tokenId);
         const details = await readContract.tokenDetails(tokenId);
         const typeCode = Number(details[0]); 
         
@@ -176,7 +185,7 @@ app.post('/api/verify', upload.single('verifyFile'), async (req, res) => {
         };
 
         const tokenURI = await readContract.tokenURI(tokenId);
-        const httpURI = tokenURI.replace("ipfs://", "https://cloudflare-ipfs.com/ipfs/");
+        const httpURI = tokenURI.replace("ipfs://", "https://gateway.pinata.cloud/ipfs/");
         
         let metaData = {};
         try {
@@ -185,15 +194,40 @@ app.post('/api/verify', upload.single('verifyFile'), async (req, res) => {
         } catch (e) { console.log("Lỗi fetch IPFS:", e.message); }
 
         const isOwner = claimerAddress && (currentOwner.toLowerCase() === claimerAddress.toLowerCase());
-
-        res.json({
-            verified: true,
-            tokenId,
-            currentOwner,
-            isYourCert: isOwner,
-            details: extraData,
-            metadata: metaData
-        });
+        const isCoOwner = claimerAddress && (coOwner.toLowerCase() === claimerAddress.toLowerCase());
+        
+        if(!isOwner) {
+            if(!isCoOwner){
+                res.json({
+                    verified: true,
+                    tokenId,
+                    currentOwner,
+                    isYourCert: isOwner,
+                    details: extraData,
+                    metadata: metaData
+                });
+            }
+            else {
+                res.json({
+                    verified: true,
+                    tokenId,
+                    currentOwner,
+                    isYourCert: isCoOwner,
+                    details: extraData,
+                    metadata: metaData
+                });
+            }
+        }
+        else {
+            res.json({
+                verified: true,
+                tokenId,
+                currentOwner,
+                isYourCert: isOwner,
+                details: extraData,
+                metadata: metaData
+            });
+        }
 
     } catch (error) {
         console.error("Lỗi Verify:", error);
