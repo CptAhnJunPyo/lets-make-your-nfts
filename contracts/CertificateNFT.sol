@@ -22,6 +22,7 @@ contract CertificateNFT is ERC721, ERC721URIStorage, ERC721Burnable, ERC721Enume
     mapping(uint256 => TokenDetails) public tokenDetails;
     mapping(bytes32 => uint256) public hashToTokenId;
     mapping(uint256 => bytes32) public tokenIdToHash; // Mapping ngược để xóa hash khi burn
+    mapping(address => uint256[]) public coOwnedTokens;
 
     constructor(address defaultAdmin, address minter) ERC721("CertificateNFT", "CERF") {
         _grantRole(DEFAULT_ADMIN_ROLE, defaultAdmin);
@@ -59,11 +60,12 @@ contract CertificateNFT is ERC721, ERC721URIStorage, ERC721Burnable, ERC721Enume
         
         _safeMint(to, tokenId);
         _setTokenURI(tokenId, uri);
-        
+        if (_coOwner != address(0)) {
+            coOwnedTokens[_coOwner].push(tokenId);
+        }
         // Lưu Hash
         hashToTokenId[hash] = tokenId;
 
-        // Lưu thông tin mở rộng (Classifying)
         tokenDetails[tokenId] = TokenDetails({
             tType: TokenType(_type),
             coOwner: _coOwner,
@@ -76,20 +78,15 @@ contract CertificateNFT is ERC721, ERC721URIStorage, ERC721Burnable, ERC721Enume
         require(tokenDetails[tokenId].tType == TokenType.VOUCHER, "Khong phai Voucher");
         require(!tokenDetails[tokenId].isRedeemed, "Voucher da su dung roi");
 
-        // Đánh dấu đã dùng
         tokenDetails[tokenId].isRedeemed = true;
         
-        // (Tùy chọn) Burn luôn NFT nếu muốn nó biến mất
         _burn(tokenId); 
     }
     function getCoOwner(uint256 tokenId) public view returns (address) {
         return tokenDetails[tokenId].coOwner;
     }
-    // Override hàm burn để xóa dữ liệu hash khi NFT bị hủy (Revoke)
     function burn(uint256 tokenId) public override {
-        // Chủ sở hữu hoặc người được ủy quyền mới được burn
         super.burn(tokenId);
-        // Xóa thông tin mapping để hash này có thể được mint lại
         bytes32 hash = tokenIdToHash[tokenId];
         delete hashToTokenId[hash];
         delete tokenIdToHash[tokenId];
@@ -119,7 +116,9 @@ contract CertificateNFT is ERC721, ERC721URIStorage, ERC721Burnable, ERC721Enume
     {
         return super.tokenURI(tokenId);
     }
-
+    function getCoOwnedTokens(address user) public view returns (uint256[] memory) {
+        return coOwnedTokens[user];
+    }
     function supportsInterface(bytes4 interfaceId)
         public
         view

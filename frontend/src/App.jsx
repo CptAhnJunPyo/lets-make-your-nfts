@@ -3,16 +3,23 @@ import { ethers } from 'ethers';
 import axios from 'axios';
 import './App.css';
 
-const CONTRACT_ADDRESS = "0x58d9A8149386b548b7e9798717C71132e5e9EF26";
+const CONTRACT_ADDRESS = "0xe648858D19C0A71A8581d3B6A9DfeC9b10307B77";
 const contractABI = [
   "function tokenOfOwnerByIndex(address owner, uint256 index) view returns (uint256)",
   "function balanceOf(address owner) view returns (uint256)",
   "function tokenURI(uint256 tokenId) view returns (string)",
   "function safeTransferFrom(address from, address to, uint256 tokenId)",
   "function burn(uint256 tokenId)",
-  "function tokenDetails(uint256 tokenId) view returns (uint8 tType, address coOwner, uint256 value, bool isRedeemed)"
+  "function tokenDetails(uint256 tokenId) view returns (uint8 tType, address coOwner, uint256 value, bool isRedeemed)",
+  "function getCoOwnedTokens(address user) view returns (uint256[])",
+  "function getCoOwner(uint256 tokenId) public view returns (address)"
 ];
-
+const ipAddress = 'localhost:3001'; // Example IP address, use your target IP
+const port = '3001';
+const endpoint = '/api/mint';
+const endpoint2 = '/api/verify';
+const url = `${ipAddress}${endpoint}`;
+const url2 = `${ipAddress}${endpoint2}`;
 function App() {
   const [account, setAccount] = useState(null);
   const [myNFTs, setMyNFTs] = useState([]);
@@ -79,57 +86,69 @@ function App() {
     
     try {
       const contract = new ethers.Contract(CONTRACT_ADDRESS, contractABI, signer);
-      const balanceBigInt = await contract.balanceOf(userAddress);
-      const balance = Number(balanceBigInt);
-
       const items = [];
+      const addedTokenIds = new Set();
+
+      const balance = Number(await contract.balanceOf(userAddress));
       for (let i = 0; i < balance; i++) {
         try {
           const tokenId = await contract.tokenOfOwnerByIndex(userAddress, i);
-          
-          const tokenURI = await contract.tokenURI(tokenId);
-          const httpURI = tokenURI.replace("ipfs://", "https://cloudflare-ipfs.com/ipfs/");
-          
-          let meta = { name: `NFT #${tokenId}`, description: "", image: "" };
-          try {
-             const metaRes = await axios.get(httpURI);
-             meta = metaRes.data;
-          } catch(e) { console.warn("Lỗi fetch meta IPFS", e); }
-
-          let typeLabel = "Standard";
-          let extraInfo = "";
-          try {
-             const details = await contract.tokenDetails(tokenId);
-             const typeCode = Number(details[0]);
-             
-             if (typeCode === 1) {
-                 typeLabel = "Joint Contract";
-                 extraInfo = `Co-Owner: ${details[1].slice(0,6)}...`;
-             } else if (typeCode === 2) {
-                 typeLabel = "Voucher";
-                 extraInfo = `Value: $${details[2]} ${details[3] ? '(Used)' : ''}`;
-             }
-          } catch(e) { console.warn("Lỗi fetch tokenDetails", e); }
-
-          items.push({
-            tokenId: tokenId.toString(),
-            name: meta.name,
-            description: meta.description,
-            image: meta.image ? meta.image.replace("ipfs://", "https://cloudflare-ipfs.com/ipfs/") : "",
-            typeLabel,
-            extraInfo
-          });
-        } catch (err) {
-          console.error("Lỗi load item:", err);
-        }
+          if (!addedTokenIds.has(tokenId)) {
+              items.push(await processToken(contract, tokenId, "Owner"));
+              addedTokenIds.add(tokenId);
+          }
+        } catch (err) {}
       }
+      
+      try {
+          const coOwnedIds = await contract.getCoOwnedTokens(userAddress);
+          for (let tokenId of coOwnedIds) {
+              if (!addedTokenIds.has(tokenId)) {
+                  try {
+                      await contract.ownerOf(tokenId);
+                      items.push(await processToken(contract, tokenId, "Co-Owner"));
+                      addedTokenIds.add(tokenId);
+                  } catch (e) { console.log("Token burned:", tokenId); }
+              }
+          }
+      } catch (err) { console.warn("Lỗi fetch Co-Owner:", err); }
+
       setMyNFTs(items);
-    } catch (error) {
-      console.error("Lỗi fetch NFT:", error);
-    }
+    } catch (error) { console.error(error); }
     setLoading(false);
   };
+  const processToken = async (contract, tokenId, role) => {
+    const tokenURI = await contract.tokenURI(tokenId);
+    const httpURI = tokenURI.replace("ipfs://", "https://gateway.pinata.cloud/ipfs/");
+    
+    let meta = { name: `NFT #${tokenId}`, description: "", image: "" };
+    try { const res = await axios.get(httpURI); meta = res.data; } catch(e){}
 
+    let typeLabel = "Standard";
+    let extraInfo = "";
+    try {
+        const details = await contract.tokenDetails(tokenId);
+        const typeCode = Number(details[0]);
+        if (typeCode === 1) { 
+            typeLabel = "Joint Contract"; 
+            // Nếu mình là Co-Owner thì hiện thông tin Owner chính
+            extraInfo = role === "Co-Owner" ? `Owner: ...` : `Partner: ${details[1].slice(0,6)}...`;
+        } else if (typeCode === 2) { 
+            typeLabel = "Voucher"; 
+            extraInfo = `Value: $${details[2]}`; 
+        }
+    } catch(e){}
+
+    return {
+      tokenId: tokenId.toString(),
+      name: meta.name,
+      description: meta.description,
+      image: meta.image?.replace("ipfs://", "https://gateway.pinata.cloud/ipfs/"),
+      typeLabel,
+      extraInfo,
+      role // Lưu thêm vai trò để hiển thị UI nếu cần
+    };
+  }
   const handleMintRequest = async () => {
     if (!account) return alert("Chưa kết nối ví!");
     if (!selectedFile) return alert("Vui lòng chọn file ảnh/PDF!");
@@ -156,7 +175,7 @@ function App() {
     if (nftType === 'voucher') form.append('voucherValue', formData.voucherValue);
 
     try {
-      const response = await axios.post('https://lets-make-your-nfts.onrender.com/api/mint', form, {
+      const response = await axios.post('http://localhost:3001/api/mint', form, {
         headers: { 'Content-Type': 'multipart/form-data' }
       });
 
@@ -168,7 +187,7 @@ function App() {
     } catch (error) {
       console.error(error);
       const errMsg = error.response?.data?.error || error.message;
-      setStatus(`Thất bại: ${errMsg}`);
+      setStatus(`Lỗi: ${errMsg.slice(0, 50)}...`);
     }
   };
 
@@ -224,7 +243,7 @@ function App() {
     form.append('claimerAddress', account || "");
 
     try {
-      const response = await axios.post('https://lets-make-your-nfts.onrender.com/api/verify', form, {
+      const response = await axios.post('http://localhost:3001/api/verify', form, {
         headers: { 'Content-Type': 'multipart/form-data' }
       });
       setVerifyResult(response.data);
