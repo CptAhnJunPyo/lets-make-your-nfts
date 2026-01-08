@@ -125,10 +125,10 @@ export const mintNFT = async (signer, account, nftType, selectedFile, formData) 
   // 2. Mã hóa file gốc (Client-Side Encryption)
   const secureFile = await encryptFile(selectedFile, key);
 
-
+  const typeInt = getEnumFromTypeString(nftType);
   const form = new FormData();
   form.append('userAddress', account);
-  form.append('type', nftType);
+  form.append('type', typeInt);
   form.append('studentName', formData.studentName);
   form.append('certName', formData.certName);
   form.append('issuerName', formData.issuerName);
@@ -137,7 +137,6 @@ export const mintNFT = async (signer, account, nftType, selectedFile, formData) 
   form.append('issuedAt', formData.issuedAt);
   form.append('externalUrl', formData.externalUrl);
   form.append('certificateFile', secureFile);
-
   if (nftType === 'joint') form.append('coOwner', formData.coOwner);
   if (nftType === 'voucher') form.append('voucherValue', formData.voucherValue);
 
@@ -195,7 +194,19 @@ export const revokeNFT = async (tokenId) => {
   
   return tx.hash;
 };
-
+export const NFT_TYPE_ENUM = {
+  STANDARD: 0,
+  JOINT: 1, 
+  VOUCHER: 2
+};
+export const getEnumFromTypeString = (typeString) => {
+  switch (typeString.toLowerCase()) {
+      case 'standard': return NFT_TYPE_ENUM.STANDARD; // 0
+      case 'joint':    return NFT_TYPE_ENUM.JOINT;    // 1
+      case 'voucher':  return NFT_TYPE_ENUM.VOUCHER;  // 2
+      default: return NFT_TYPE_ENUM.STANDARD;         // Default 0
+  }
+};
 export const verifyDocument = async (verifyFile, account) => {
   if (!verifyFile) throw new Error("Vui lòng chọn file gốc để kiểm tra!");
 

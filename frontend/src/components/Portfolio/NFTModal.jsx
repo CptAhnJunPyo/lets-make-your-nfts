@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { unlockAndVerifyNFT, connectWallet } from '../../utils/helpers'; 
-import './NFTModal.css'; // Nếu có file css
+import { unlockAndVerifyNFT, connectWallet,  } from '../../utils/helpers'; 
+import './NFTModal.css'; 
 
 const NFTModal = ({ nft, onClose }) => {
     const [decryptedImg, setDecryptedImg] = useState(null);
@@ -18,7 +18,6 @@ const NFTModal = ({ nft, onClose }) => {
             const result = await unlockAndVerifyNFT(signer, nft);
             
             setDecryptedImg(result.decryptedImage);
-            setIntegrity(result.isVerified);
             setStatus('verified');
 
         } catch (error) {
@@ -39,7 +38,6 @@ const NFTModal = ({ nft, onClose }) => {
                             <div className="image-wrapper">
                                 <img src={decryptedImg} alt="Decrypted Content" />                                
                                 <div className={`integrity-badge ${integrity ? 'valid' : 'invalid'}`}>
-                                    {integrity ? "✅ Verified Original" : "⚠️ File Corrupted"}
                                 </div>
                             </div>
                         ) : (
@@ -58,7 +56,6 @@ const NFTModal = ({ nft, onClose }) => {
                         )}
                     </div>
 
-                    {/* --- CỘT PHẢI: THÔNG TIN --- */}
                     <div className="modal-info-col">
                         <span className="token-id">Token ID #{nft.tokenId}</span>
                         <h2>{nft.name}</h2>
