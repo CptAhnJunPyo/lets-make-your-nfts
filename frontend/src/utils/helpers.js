@@ -1,10 +1,11 @@
 import { ethers } from 'ethers';
 import axios from 'axios';
 import { CONTRACT_ADDRESS, contractABI, API_BASE_URL } from './constants';
+import { generateKeyFromWallet, encryptFile, decryptContent, verifyIntegrity } from './security';
 
 export const ipfsToHttp = (uri) => {
   if (!uri) return "";
-  return uri.replace("ipfs://", "https://cloudflare-ipfs.com/ipfs/");
+  return uri.replace("ipfs://", "https://gateway.pinata.cloud/ipfs/");
 };
 
 export const connectWallet = async () => {
@@ -22,68 +23,108 @@ export const connectWallet = async () => {
 
 export const fetchUserNFTs = async (userAddress, signer) => {
   const contract = new ethers.Contract(CONTRACT_ADDRESS, contractABI, signer);
-  const balanceBigInt = await contract.balanceOf(userAddress);
-  const balance = Number(balanceBigInt);
-
   const items = [];
+  const addedTokenIds = new Set();
+
+  const processToken = async (tokenId, role) => {
+      try {
+          const tokenURI = await contract.tokenURI(tokenId);
+          const httpURI = ipfsToHttp(tokenURI);
+          
+          let meta = { name: `NFT #${tokenId}`, description: "", image: "" };
+          let certHash = ""; // Biến lưu hash
+          
+          try {
+            const metaRes = await axios.get(httpURI);
+            meta = metaRes.data;
+            certHash = meta.certificate_hash ? meta.certificate_hash.replace("0x", "") : "";
+          } catch(e) {
+            console.warn(`Lỗi fetch metadata token ${tokenId}`);
+          }
+
+          let typeLabel = "Standard";
+          let extraInfo = "";
+          try {
+            const details = await contract.tokenDetails(tokenId);
+            const typeCode = Number(details[0]);
+            
+            if (typeCode === 1) {
+              typeLabel = "Joint Contract";
+              extraInfo = role === "Co-Owner" 
+                  ? `Owner: ...` 
+                  : `Partner: ${details[1].slice(0,6)}...`;
+            } else if (typeCode === 2) {
+              typeLabel = "Voucher";
+              extraInfo = `Value: $${details[2]} ${details[3] ? '(Used)' : ''}`;
+            }
+          } catch(e) {}
+
+          return {
+            tokenId: tokenId.toString(),
+            name: meta.name,
+            description: meta.description,
+            image: ipfsToHttp(meta.image),
+            certificateHash: certHash,
+            typeLabel,
+            extraInfo,
+            role // "Owner" hoặc "Co-Owner"
+          };
+      } catch (err) {
+          console.error(`Lỗi xử lý token ${tokenId}:`, err);
+          return null;
+      }
+  };
+  const balance = Number(await contract.balanceOf(userAddress));
   for (let i = 0; i < balance; i++) {
     try {
       const tokenId = await contract.tokenOfOwnerByIndex(userAddress, i);
-      
-      const tokenURI = await contract.tokenURI(tokenId);
-      const httpURI = ipfsToHttp(tokenURI);
-      
-      let meta = { name: `NFT #${tokenId}`, description: "", image: "" };
-      try {
-        const metaRes = await axios.get(httpURI);
-        meta = metaRes.data;
-      } catch(e) { 
-        console.warn("Lỗi fetch meta IPFS", e); 
+      if (!addedTokenIds.has(tokenId)) {
+          const item = await processToken(tokenId, "Owner");
+          if (item) items.push(item);
+          addedTokenIds.add(tokenId);
       }
-
-      let typeLabel = "Standard";
-      let extraInfo = "";
-      try {
-        const details = await contract.tokenDetails(tokenId);
-        const typeCode = Number(details[0]);
-        
-        if (typeCode === 1) {
-          typeLabel = "Joint Contract";
-          extraInfo = `Co-Owner: ${details[1].slice(0,6)}...`;
-        } else if (typeCode === 2) {
-          typeLabel = "Voucher";
-          extraInfo = `Value: $${details[2]} ${details[3] ? '(Used)' : ''}`;
-        }
-      } catch(e) { 
-        console.warn("Lỗi fetch tokenDetails", e); 
+    } catch (e) {}
+  }
+  try {
+      if (contract.getCoOwnedTokens) {
+          const coOwnedIds = await contract.getCoOwnedTokens(userAddress);
+          for (let tokenId of coOwnedIds) {
+              if (!addedTokenIds.has(tokenId)) {
+                  try {
+                      await contract.ownerOf(tokenId); 
+                      const item = await processToken(tokenId, "Co-Owner");
+                      if (item) items.push(item);
+                      addedTokenIds.add(tokenId);
+                  } catch (e) {}
+              }
+          }
       }
-
-      items.push({
-        tokenId: tokenId.toString(),
-        name: meta.name,
-        description: meta.description,
-        image: ipfsToHttp(meta.image),
-        typeLabel,
-        extraInfo
-      });
-    } catch (err) {
-      console.error("Lỗi load item:", err);
-    }
+  } catch (err) {
+      console.warn("Contract chưa hỗ trợ getCoOwnedTokens hoặc lỗi mạng");
   }
   
   return items;
 };
 
-export const mintNFT = async (account, nftType, selectedFile, formData) => {
-  if (!account) throw new Error("Chưa kết nối ví!");
-  if (!selectedFile) throw new Error("Vui lòng chọn file ảnh/PDF!");
+export const mintNFT = async (signer, account, nftType, selectedFile, formData) => {
+  if (!account || !signer) throw new Error("Chưa kết nối ví!");
+  if (!selectedFile) throw new Error("Vui lòng chọn file!");
   
+  // Validate Form
   if (nftType === 'joint' && !ethers.isAddress(formData.coOwner)) {
     throw new Error("Địa chỉ Co-Owner không hợp lệ!");
   }
   if (nftType === 'voucher' && !formData.voucherValue) {
     throw new Error("Vui lòng nhập giá trị Voucher!");
   }
+
+  // --- BẮT ĐẦU QUY TRÌNH BẢO MẬT ---
+  // 1. Tạo Key từ ví
+  const key = await generateKeyFromWallet(signer);
+  
+  // 2. Mã hóa file gốc (Client-Side Encryption)
+  const secureFile = await encryptFile(selectedFile, key);
+
 
   const form = new FormData();
   form.append('userAddress', account);
@@ -95,7 +136,7 @@ export const mintNFT = async (account, nftType, selectedFile, formData) => {
   form.append('description', formData.description);
   form.append('issuedAt', formData.issuedAt);
   form.append('externalUrl', formData.externalUrl);
-  form.append('certificateFile', selectedFile);
+  form.append('certificateFile', secureFile);
 
   if (nftType === 'joint') form.append('coOwner', formData.coOwner);
   if (nftType === 'voucher') form.append('voucherValue', formData.voucherValue);
@@ -122,7 +163,29 @@ export const transferNFT = async (tokenId, toAddress) => {
   
   return tx.hash;
 };
+export const unlockAndVerifyNFT = async (signer, nft) => {
+  if (!signer || !nft) throw new Error("Thiếu thông tin");
 
+  // 1. Tạo lại Key từ ví
+  const key = await generateKeyFromWallet(signer);
+  
+  // 2. Giải mã ảnh
+  const decryptedImg = await decryptContent(nft.image, key);
+  
+  // 3. Verify Integrity (nếu có hash gốc)
+  let isVerified = null;
+  if (nft.certificateHash) {
+      isVerified = await verifyIntegrity(decryptedImg, nft.certificateHash);
+  } else {
+      // Với NFT cũ không có hash, mặc định true (hoặc null tùy logic UI)
+      isVerified = true; 
+  }
+
+  return {
+      decryptedImage: decryptedImg,
+      isVerified: isVerified
+  };
+};
 export const revokeNFT = async (tokenId) => {
   const provider = new ethers.BrowserProvider(window.ethereum);
   const signer = await provider.getSigner();

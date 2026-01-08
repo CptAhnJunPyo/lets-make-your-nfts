@@ -11,7 +11,6 @@ import VerifySection from './components/Verify/VerifySection';
 import NFTModal from './components/Portfolio/NFTModal';
 import TutorialOverlay from './components/Layout/TutorialOverlay';
 
-// Import các trang mới
 import Home from './pages/Home';
 import Dashboard from './pages/Dashboard';
 import History from './pages/History';
@@ -102,7 +101,8 @@ function App() {
     setStatus("⏳ Đang xử lý Mint...");
     
     try {
-      const response = await mintNFT(account, nftType, selectedFile, formData);
+      const { signer } = await connectWalletHelper();
+      const response = await mintNFT(signer, account, nftType, selectedFile, formData);
       
       if (response.success) {
         setStatus(`Thành công! Tx Hash: ${response.txHash.slice(0, 10)}...`);
@@ -185,16 +185,12 @@ function App() {
       />
 
       <Routes>
-        {/* Trang Home mới */}
         <Route path="/home" element={<Home account={account} darkMode={darkMode} />} />
         
-        {/* Trang Dashboard mới */}
         <Route path="/dashboard" element={<Dashboard account={account} myNFTs={myNFTs} darkMode={darkMode} />} />
         
-        {/* Trang History mới */}
         <Route path="/history" element={<History account={account} darkMode={darkMode} />} />
         
-        {/* Trang chính - GIỮ NGUYÊN LOGIC CŨ */}
         <Route path="/*" element={
           <main className="main-content">
         <div className="container">

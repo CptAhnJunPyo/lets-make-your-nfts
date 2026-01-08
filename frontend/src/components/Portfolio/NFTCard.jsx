@@ -9,10 +9,9 @@ function NFTCard({ nft, onCardClick, onTransfer, onRevoke }) {
     >
       <div className="card-media">
         <img 
-          src={nft.image} 
+          src="/assets/lock.png" 
           alt="NFT" 
-          className="certificate-image" 
-          onError={(e) => {e.target.src = "https://via.placeholder.com/300?text=No+Image"}} 
+          className="certificate-image"  
         />
         <div className="card-overlay">
           <span className="token-id">#{nft.tokenId}</span>

@@ -1,33 +1,29 @@
+// src/utils/security.js
 import CryptoJS from 'crypto-js';
-import { ethers } from 'ethers';
 
-// 1. Tạo Key từ Chữ ký ví (Deterministic Key Generation)
-// Cùng 1 ví + cùng 1 message => Luôn ra cùng 1 Key
-export const generateKeyFromWallet = async (provider) => {
+// 1. Tạo Key giải mã/mã hóa từ Chữ ký ví
+// Cùng 1 ví ký vào message này sẽ luôn ra cùng 1 Key
+export const generateKeyFromWallet = async (signer) => {
     try {
-        const signer = await provider.getSigner();
-        // Yêu cầu user ký một thông điệp cố định để lấy chữ ký
-        const message = "Sign this message to unlock your encrypted NFT data. Do not share this signature!";
+        const message = "Sign this message to encrypt/decrypt your NFT data. Keep it safe!";
         const signature = await signer.signMessage(message);
-        
-        // Dùng chữ ký (dài loằng ngoằng) băm ra để làm Key AES 256-bit
+        // Băm chữ ký ra để lấy chuỗi Key 256-bit chuẩn
         return CryptoJS.SHA256(signature).toString();
     } catch (error) {
         throw new Error("User denied signature");
     }
 };
 
-// 2. Mã hóa File (File Object -> Encrypted File Object)
 export const encryptFile = (file, key) => {
     return new Promise((resolve, reject) => {
         const reader = new FileReader();
         reader.onload = () => {
             const wordArray = CryptoJS.lib.WordArray.create(reader.result);
             // Mã hóa AES
-            const encrypted = CryptoJS.AES.encrypt(wordArray, key).toString();
-            
-            // Tạo thành file mới (dạng text/blob) để upload
+            const encrypted = CryptoJS.AES.encrypt(wordArray, key).toString();            
+            // Đóng gói lại thành File object để gửi qua FormData
             const encryptedBlob = new Blob([encrypted], { type: 'text/plain' });
+            // Thêm đuôi .enc để nhận diện
             const encryptedFile = new File([encryptedBlob], file.name + ".enc", { type: "text/plain" });
             
             resolve(encryptedFile);
@@ -37,17 +33,48 @@ export const encryptFile = (file, key) => {
     });
 };
 
-// 3. Giải mã (Encrypted String/Url -> Original Data URL)
-export const decryptContent = async (encryptedUrl, key) => {
-    // Tải nội dung file mã hóa từ IPFS/Cloud về
-    const response = await fetch(encryptedUrl);
+export const decryptContent = async (ipfsUrl, key) => {
+    // 1. Tải nội dung mã hóa từ IPFS về
+    const httpUrl = ipfsUrl.replace("ipfs://", "https://cloudflare-ipfs.com/ipfs/");
+    const response = await fetch(httpUrl);
     const encryptedText = await response.text();
 
-    // Giải mã AES
+    // 2. Giải mã AES
     const decrypted = CryptoJS.AES.decrypt(encryptedText, key);
     
-    // Chuyển lại thành định dạng hiển thị ảnh (Base64)
-    // Lưu ý: Đây là xử lý cho ảnh, nếu là PDF cần convert sang Uint8Array
+    // 3. Chuyển sang Base64 để hiển thị thẻ <img>
     const str = decrypted.toString(CryptoJS.enc.Base64);
-    return `data:image/png;base64,${str}`; // Giả sử ảnh PNG/JPG
+    
+    return `data:image/png;base64,${str}`; 
+};
+export const verifyIntegrity = async (decryptedDataUrl, originalHash) => {
+    return new Promise((resolve, reject) => {
+        try {
+            // 1. Chuyển Base64/DataURL về dạng ArrayBuffer để tính Hash
+            // (Vì lúc Mint ta tính Hash trên file gốc binary)
+            const fetchBlob = async () => {
+                const res = await fetch(decryptedDataUrl);
+                const blob = await res.blob();
+                
+                const reader = new FileReader();
+                reader.onload = () => {
+                    const wordArray = CryptoJS.lib.WordArray.create(reader.result);
+                    const calculatedHash = CryptoJS.SHA256(wordArray).toString();
+                    
+                    console.log("Calculated Hash:", calculatedHash);
+                    console.log("Original Hash:  ", originalHash);
+
+                    // 2. So sánh (Không phân biệt hoa thường)
+                    const isValid = calculatedHash.toLowerCase() === originalHash.toLowerCase();
+                    resolve(isValid);
+                };
+                reader.onerror = reject;
+                reader.readAsArrayBuffer(blob);
+            };
+            
+            fetchBlob();
+        } catch (error) {
+            reject(error);
+        }
+    });
 };

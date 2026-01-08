@@ -9,4 +9,4 @@ export const contractABI = [
   "function tokenDetails(uint256 tokenId) view returns (uint8 tType, address coOwner, uint256 value, bool isRedeemed)"
 ];
 
-export const API_BASE_URL = "https://lets-make-your-nfts.onrender.com/api";
+export const API_BASE_URL = "http://localhost:3001/api";
