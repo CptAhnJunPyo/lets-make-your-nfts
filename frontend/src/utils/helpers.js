@@ -180,7 +180,6 @@ export const unlockAndVerifyNFT = async (signer, nft) => {
       // Với NFT cũ không có hash, mặc định true (hoặc null tùy logic UI)
       isVerified = true; 
   }
-
   return {
       decryptedImage: decryptedImg,
       isVerified: isVerified
